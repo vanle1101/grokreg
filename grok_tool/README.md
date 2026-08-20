@@ -1,35 +1,38 @@
-# Grok Register Tool
+# ⚡ GROKREG — grok_tool Core Package
 
-Package nằm trong repo [grok-tool-](https://github.com/nguyenquan27122005-cmd/grok-tool-).
+Package chính chứa toàn bộ mã nguồn của hệ thống **GROKREG** (Protocol HTTP, Stealth Chrome, Temp Mail Racing, Hotmail Graph API, Sub2API Integration).
 
-**Hướng dẫn đầy đủ (kiểu repo lớn):** xem [README gốc](../README.md).
+> 📖 **Xem tài liệu hướng dẫn đầy đủ với giao diện chi tiết tại:** [README.md gốc của dự án](../README.md).
 
-- [Cách dùng từng bước](docs/USAGE.md)
-- [Toàn bộ config](docs/CONFIG.md)
-- [Kiến trúc](ARCHITECTURE.md)
-- [Đẩy GitHub an toàn](SAFE_GITHUB.md)
+---
 
-## 30 giây
+## 🚀 Khởi chạy nhanh
 
+### Cách 1: Chạy 1-Click (Khuyên dùng)
+Bấm đúp file `start.bat` ở thư mục gốc hoặc chạy:
 ```bat
-copy config.example.json config.json
-:: sửa Sub2API + password — file này không commit
-
-venv\Scripts\pip install -r requirements.txt
-
-:: Terminal 1 — solver (nếu dùng HTTP)
-CHAY_SOLVER.bat
-
-:: Terminal 2 — web
-CHAY_WEB.bat
-:: http://127.0.0.1:8787
+start.bat
 ```
 
-Hoặc CLI:
-
+### Cách 2: Chạy Web Control Plane
 ```bat
-venv\Scripts\python.exe main.py 0 --count 1 --backend protocol
-venv\Scripts\python.exe main.py 0 --count 1 --backend browser
+venv\Scripts\python.exe -m web_console.app
+# Mở trình duyệt tại: http://127.0.0.1:8787
 ```
 
-`ESC` = dừng. Kết quả: `data/accounts.txt` (local only).
+### Cách 3: Chạy dòng lệnh (CLI)
+```bat
+# Protocol HTTP (~30s) với Temp Mail Racing:
+venv\Scripts\python.exe main.py 4 --count 10 --backend protocol
+
+# Hotmail:
+venv\Scripts\python.exe main.py 1 --count 5 --backend protocol
+```
+
+---
+
+## 📚 Tài liệu chi tiết
+- [Cấu hình chi tiết (`config.json`)](docs/CONFIG.md)
+- [Hướng dẫn sử dụng toàn diện](docs/USAGE.md)
+- [Kiến trúc hệ thống](ARCHITECTURE.md)
+- [Bảo mật dữ liệu](SAFE_GITHUB.md)
