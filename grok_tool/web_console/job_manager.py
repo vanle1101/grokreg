@@ -39,6 +39,14 @@ class Job:
         ts = time.strftime("%H:%M:%S")
         self.logs.append(f"[{ts}] {line.rstrip()}")
 
+    def clear_logs(self) -> int:
+        removed = len(self.logs)
+        self.logs.clear()
+        # Treat clearing as a log-stream change so SSE consumers refresh even
+        # when no new process output is produced afterwards.
+        self._log_seq += 1
+        return removed
+
     def snapshot(self, log_from: int = 0) -> dict[str, Any]:
         lines = list(self.logs)
         # log_from is index into absolute sequence approx via length
@@ -107,6 +115,13 @@ class JobManager:
     def get(self, job_id: str) -> Optional[Job]:
         with self._lock:
             return self._jobs.get(job_id)
+
+    def clear_logs(self, job_id: str) -> tuple[Job, int]:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            return job, job.clear_logs()
 
     def start(self, tool_id: str, params: dict[str, Any]) -> Job:
         plugin = get_plugin(tool_id)

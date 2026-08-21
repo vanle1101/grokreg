@@ -230,6 +230,15 @@ def stop_job(body: StopBody = StopBody()):
     return jobs.stop(body.job_id)
 
 
+@app.delete("/api/jobs/{job_id}/logs")
+def clear_job_logs(job_id: str):
+    try:
+        job, removed = jobs.clear_logs(job_id)
+    except KeyError as e:
+        raise HTTPException(404, "job not found") from e
+    return {"ok": True, "removed": removed, "job": job.snapshot()}
+
+
 @app.get("/api/logs/stream")
 async def log_stream():
     """SSE stream of current job logs."""

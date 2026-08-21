@@ -36,6 +36,8 @@ export const stopJob = (job_id = null) =>
     method: 'POST',
     body: JSON.stringify({ job_id }),
   });
+export const clearJobLogs = (jobId) =>
+  api(`/api/jobs/${encodeURIComponent(jobId)}/logs`, { method: 'DELETE' });
 export const getConfigSummary = () => api('/api/config/summary');
 export const updateConfig = (config) =>
   api('/api/config', {

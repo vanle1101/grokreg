@@ -1,4 +1,4 @@
-import * as api from './api.js?v=3.3';
+import * as api from './api.js?v=3.4';
 import { toast } from './toast.js?v=3.3';
 
 const getTools = api.getTools;
@@ -7,6 +7,7 @@ const getToolResults = api.getToolResults;
 const getCurrentJob = api.getCurrentJob;
 const startJob = api.startJob;
 const stopJob = api.stopJob;
+const clearJobLogs = api.clearJobLogs;
 const getConfigSummary = api.getConfigSummary;
 const updateConfig = api.updateConfig;
 const getHealth = api.getHealth;
@@ -494,6 +495,7 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
                 <span style="font-size:12px">Auto-scroll</span>
               </label>
               <button class="btn btn-ghost" id="btn-copy-log" type="button">Copy log</button>
+              <button class="btn btn-danger" id="btn-clear-log" type="button" title="Xoá log của phiên hiện tại">Xoá log</button>
             </div>
           </div>
           <div class="log-console" id="log-box"></div>
@@ -540,6 +542,7 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
       toast('Copy thất bại', 'err');
     }
   });
+  bindClearLogButton();
 
   document.getElementById('btn-start-redeem')?.addEventListener('click', () => {
     const sel = root.querySelector('[data-key="job"]');
@@ -757,6 +760,24 @@ async function copyLogBox(box) {
   toast(n ? `Đã copy ${n} dòng log` : 'Log trống', n ? 'ok' : 'err');
 }
 
+function bindClearLogButton() {
+  document.getElementById('btn-clear-log')?.addEventListener('click', async () => {
+    const jobId = state.job?.id;
+    if (!jobId) {
+      toast('Chưa có log để xoá', 'err');
+      return;
+    }
+    try {
+      const result = await clearJobLogs(jobId);
+      state.job = result.job;
+      paintLogs(document.getElementById('log-box'), []);
+      toast(`Đã xoá ${result.removed || 0} dòng log`, 'ok');
+    } catch (e) {
+      toast(e.message || 'Xoá log thất bại', 'err');
+    }
+  });
+}
+
 async function renderResults(root) {
   const toolId = state.selectedTool || 'grok';
   let rows = [];
@@ -855,7 +876,7 @@ async function renderLogs(root) {
             </label>
             <button class="btn btn-danger" id="btn-stop-log">⏹ Stop</button>
             <button class="btn btn-ghost" id="btn-copy-log" type="button">Copy log</button>
-            <button class="btn btn-ghost" id="btn-clear-view">Clear view</button>
+            <button class="btn btn-danger" id="btn-clear-log" type="button" title="Xoá log của phiên hiện tại">Xoá log</button>
           </div>
         </div>
         <div class="log-console" id="log-box" style="height:calc(100vh - 220px)"></div>
@@ -875,6 +896,7 @@ async function renderLogs(root) {
       toast('Copy thất bại', 'err');
     }
   });
+  bindClearLogButton();
   document.getElementById('btn-stop-log')?.addEventListener('click', async () => {
     try {
       await stopJob();
@@ -882,10 +904,6 @@ async function renderLogs(root) {
     } catch (e) {
       toast(e.message, 'err');
     }
-  });
-  document.getElementById('btn-clear-view')?.addEventListener('click', () => {
-    const box = document.getElementById('log-box');
-    if (box) box.innerHTML = '';
   });
 }
 
