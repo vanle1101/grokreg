@@ -8,6 +8,7 @@ import asyncio
 from typing import Optional, Union
 import argparse
 from quart import Quart, request, jsonify
+from camoufox.addons import DefaultAddons
 from camoufox.async_api import AsyncCamoufox
 from patchright.async_api import async_playwright
 from db_results import init_db, save_result, load_result, cleanup_old_results
@@ -181,7 +182,14 @@ class TurnstileAPIServer:
                 _os.environ["MOZ_HEADLESS"] = "1"
                 _os.environ["MOZ_HEADLESS_WIDTH"] = "1280"
                 _os.environ["MOZ_HEADLESS_HEIGHT"] = "720"
-            camoufox = AsyncCamoufox(headless=True if self.headless else False)
+            # The solver does not need an ad blocker. Excluding Camoufox's
+            # default uBlock addon also avoids a poisoned partial-download
+            # cache (an empty UBO directory without manifest.json), which
+            # otherwise prevents the browser from starting at all.
+            camoufox = AsyncCamoufox(
+                headless=True if self.headless else False,
+                exclude_addons=[DefaultAddons.UBO],
+            )
 
         browser_configs = []
         for _ in range(self.thread_count):

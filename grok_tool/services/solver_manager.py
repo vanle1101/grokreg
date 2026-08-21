@@ -316,6 +316,7 @@ def start(
                 ])),
             }
             popen_kw: dict[str, Any] = {
+                'stdin': subprocess.DEVNULL,
                 'stdout': subprocess.DEVNULL,
                 'stderr': subprocess.PIPE,
                 'env': child_env,
