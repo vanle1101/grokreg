@@ -659,16 +659,82 @@ function selectionIn(el) {
   return !!(node && el.contains(node));
 }
 
+function parseLogLine(text) {
+  const raw = String(text ?? '');
+  let body = raw.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').trimEnd();
+  let time = '';
+  let level = '';
+  let task = '';
+  let source = '';
+
+  const outerTime = body.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*/);
+  if (outerTime) {
+    time = outerTime[1];
+    body = body.slice(outerTime[0].length);
+  }
+
+  // Technical logger already includes its own clock. Keep only the web clock
+  // so lines do not render as "[14:14:44] 14:14:44 | INFO | ...".
+  const technical = body.match(/^(\d{2}:\d{2}:\d{2})\s*\|\s*([A-Z]+)\s*\|\s*/);
+  if (technical) {
+    if (!time) time = technical[1];
+    level = technical[2];
+    body = body.slice(technical[0].length);
+  }
+
+  const taskPrefix = body.match(/^(\d+)\]\s*/);
+  if (taskPrefix) {
+    task = taskPrefix[1];
+    body = body.slice(taskPrefix[0].length);
+  }
+
+  const tagged = body.match(/^\[([^\]]+)\]\s*/);
+  if (tagged) {
+    source = tagged[1];
+    body = body.slice(tagged[0].length);
+  } else if (/^===/.test(body)) {
+    source = 'JOB';
+  } else if (/^CMD:/.test(body)) {
+    source = 'CMD';
+  }
+
+  const sourceKey = source.toLowerCase();
+  if (sourceKey === 'grok-api') source = task ? `ACC ${task}` : 'GROK';
+  else if (/^sub2api/.test(sourceKey)) source = 'SUB2API';
+  else if (sourceKey === 'turnstile') source = 'CAPTCHA';
+  else if (sourceKey === 'delivery') source = 'SYNC';
+  else if (sourceKey === 'solver') source = 'SOLVER';
+  else if (source) source = source.toUpperCase();
+  else if (task) source = `ACC ${task}`;
+  else if (level) source = level;
+  else source = 'SYSTEM';
+
+  return { raw, time: time || '--:--:--', source, message: body.trim(), level };
+}
+
 function makeLogLine(text) {
+  const parsed = parseLogLine(text);
   const div = document.createElement('div');
-  div.className = `line ${lineClass(text)}`;
-  div.textContent = text;
+  div.className = `line ${lineClass(parsed.raw)}${parsed.message ? '' : ' blank'}`;
+  div.dataset.raw = parsed.raw;
+  if (!parsed.message) return div;
+
+  const time = document.createElement('span');
+  time.className = 'log-time';
+  time.textContent = parsed.time;
+  const source = document.createElement('span');
+  source.className = 'log-source';
+  source.textContent = parsed.source;
+  const message = document.createElement('span');
+  message.className = 'log-message';
+  message.textContent = parsed.message;
+  div.append(time, source, message);
   return div;
 }
 
 function logBoxText(box) {
   if (!box) return '';
-  return [...box.querySelectorAll('.line')].map((el) => el.textContent).join('\n');
+  return [...box.querySelectorAll('.line')].map((el) => el.dataset.raw ?? el.textContent).join('\n');
 }
 
 async function copyToClipboard(text) {
@@ -716,8 +782,8 @@ function paintLogs(box, lines) {
   const canAppend =
     prevN > 0 &&
     next.length >= prevN &&
-    kids[0].textContent === next[0] &&
-    kids[prevN - 1].textContent === next[prevN - 1];
+    kids[0].dataset.raw === String(next[0] ?? '') &&
+    kids[prevN - 1].dataset.raw === String(next[prevN - 1] ?? '');
 
   if (canAppend) {
     if (next.length === prevN) return;
