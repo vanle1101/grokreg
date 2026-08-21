@@ -41,7 +41,7 @@ class GrokToolPlugin(BaseToolPlugin):
                 type="number",
                 default=1,
                 min=0,
-                max=99,
+                max=2000,
                 hint="0 = chạy liên tục đến khi Stop",
             ),
             ToolField(
@@ -120,7 +120,7 @@ class GrokToolPlugin(BaseToolPlugin):
             count = min(count, 2000)
         else:
             count = int(params.get("count") if params.get("count") is not None else 1)
-            count = max(0, min(99, count))
+            count = max(0, min(2000, count))
         backend = str(params.get("backend") or "github").strip().lower()
         if backend not in ("github", "protocol", "auto", "browser"):
             backend = "github"

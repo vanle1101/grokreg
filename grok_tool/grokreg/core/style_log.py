@@ -5,6 +5,7 @@ Display-only — does not change status / accounts / Sub2API / Sheet payloads.
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 from typing import Any, Optional
@@ -138,6 +139,20 @@ def api_err(msg: str) -> None:
 
 def api_info(icon: str, msg: str) -> None:
     api(icon, msg, color="blue")
+
+
+def progress(completed: int, total: int, ok: int) -> None:
+    """Machine-readable batch progress consumed by the web console."""
+    if os.environ.get("GROK_WEB_CONSOLE") != "1":
+        return
+    done = max(0, int(completed))
+    target = max(0, int(total))
+    success = max(0, int(ok))
+    failed = max(0, done - success)
+    _out(
+        f"@@JOB_PROGRESS completed={done} total={target} "
+        f"ok={success} failed={failed}"
+    )
 
 
 def success_block(

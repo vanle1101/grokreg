@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -19,6 +20,11 @@ from .plugins import get_plugin
 from .plugins.base import BaseToolPlugin
 
 
+_PROGRESS_RE = re.compile(
+    r"@@JOB_PROGRESS\s+completed=(\d+)\s+total=(\d+)\s+ok=(\d+)\s+failed=(\d+)"
+)
+
+
 @dataclass
 class Job:
     id: str
@@ -33,8 +39,20 @@ class Job:
     logs: Deque[str] = field(default_factory=lambda: deque(maxlen=4000))
     proc: Any = field(default=None, repr=False)
     _log_seq: int = 0
+    progress_completed: int = 0
+    progress_total: int = 0
+    progress_ok: int = 0
+    progress_failed: int = 0
 
     def append_log(self, line: str) -> None:
+        progress = _PROGRESS_RE.search(line)
+        if progress:
+            self.progress_completed = int(progress.group(1))
+            self.progress_total = int(progress.group(2))
+            self.progress_ok = int(progress.group(3))
+            self.progress_failed = int(progress.group(4))
+            self._log_seq += 1
+            return
         self._log_seq += 1
         ts = time.strftime("%H:%M:%S")
         self.logs.append(f"[{ts}] {line.rstrip()}")
@@ -58,6 +76,15 @@ class Job:
             chunk = lines[start:]
         else:
             chunk = lines
+        target = self.progress_total
+        if target <= 0:
+            try:
+                target = max(0, int(self.params.get("count") or 0))
+            except (TypeError, ValueError):
+                target = 0
+        percent = (
+            min(100, round(self.progress_completed * 100 / target)) if target else None
+        )
         return {
             "id": self.id,
             "tool_id": self.tool_id,
@@ -71,6 +98,14 @@ class Job:
             "log_seq": total,
             "logs": chunk if log_from else lines[-300:],
             "running": self.status in ("running", "stopping", "pending"),
+            "progress": {
+                "completed": self.progress_completed,
+                "total": target,
+                "ok": self.progress_ok,
+                "failed": self.progress_failed,
+                "percent": percent,
+                "continuous": target == 0,
+            },
         }
 
 
@@ -195,11 +230,17 @@ class JobManager:
         job.append_log(f"=== START tool={job.tool_id} params={job.params} ===")
         try:
             cmd = plugin.build_command(job.params, self.root)
+            try:
+                count_pos = cmd.index("--count") + 1
+                job.progress_total = max(0, int(cmd[count_pos]))
+            except (ValueError, IndexError, TypeError):
+                pass
             cwd = Path(plugin.cwd(self.root))
             env = os.environ.copy()
             env["PYTHONUTF8"] = "1"
             env["PYTHONIOENCODING"] = "utf-8"
             env["PYTHONUNBUFFERED"] = "1"
+            env["GROK_WEB_CONSOLE"] = "1"
             env["GROK_SKIP_KILL_OLD"] = "1"  # don't kill web console chrome accidentally
             if hasattr(plugin, "env_overrides"):
                 env.update(plugin.env_overrides(job.params))  # type: ignore[attr-defined]

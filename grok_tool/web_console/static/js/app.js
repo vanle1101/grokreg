@@ -134,6 +134,50 @@ function updateRunPill(job) {
   else text.textContent = `${job.tool_id || 'job'} · ${job.status}`;
 }
 
+function normalizedProgress(job) {
+  if (!job) return null;
+  const source = job.progress || {};
+  const total = Math.max(0, Number(source.total ?? job.params?.count ?? 0) || 0);
+  let completed = Math.max(0, Number(source.completed) || 0);
+  if (job.status === 'done' && total > 0 && completed === 0) completed = total;
+  completed = total > 0 ? Math.min(total, completed) : completed;
+  const ok = Math.min(completed, Math.max(0, Number(source.ok) || 0));
+  const failed = Math.min(completed, Math.max(0, Number(source.failed) || 0));
+  const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : null;
+  return { completed, total, ok, failed, percent, continuous: total === 0 };
+}
+
+function progressContent(job) {
+  const p = normalizedProgress(job);
+  if (!p) return '';
+  const countText = p.continuous
+    ? `${p.completed} tài khoản đã xử lý · chạy liên tục`
+    : `${p.completed} / ${p.total} tài khoản`;
+  const percentText = p.continuous ? 'LIVE' : `${p.percent}%`;
+  const width = p.continuous ? 32 : p.percent;
+  return `
+    <div class="progress-meta">
+      <strong>${countText}</strong>
+      <span>${percentText}</span>
+    </div>
+    <div class="progress-track${p.continuous ? ' is-continuous' : ''}" role="progressbar"
+      aria-label="Tiến trình đăng ký" aria-valuemin="0"
+      ${p.continuous ? '' : `aria-valuemax="${p.total}" aria-valuenow="${p.completed}"`}>
+      <i style="width:${width}%"></i>
+    </div>
+    <div class="progress-detail">
+      <span class="progress-ok">${p.ok} thành công</span>
+      <span class="progress-fail">${p.failed} thất bại</span>
+    </div>`;
+}
+
+function updateJobProgress(job) {
+  const panel = document.getElementById('job-progress');
+  if (!panel) return;
+  panel.hidden = !job;
+  panel.innerHTML = progressContent(job);
+}
+
 /* ── Helpers ── */
 function esc(s) {
   return String(s ?? '')
@@ -498,6 +542,7 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
               <button class="btn btn-danger" id="btn-clear-log" type="button" title="Xoá log của phiên hiện tại">Xoá log</button>
             </div>
           </div>
+          <div class="job-progress" id="job-progress" ${job ? '' : 'hidden'}>${progressContent(job)}</div>
           <div class="log-console" id="log-box"></div>
         </div>
       </div>
@@ -879,6 +924,7 @@ async function renderLogs(root) {
             <button class="btn btn-danger" id="btn-clear-log" type="button" title="Xoá log của phiên hiện tại">Xoá log</button>
           </div>
         </div>
+        <div class="job-progress" id="job-progress" ${job ? '' : 'hidden'}>${progressContent(job)}</div>
         <div class="log-console" id="log-box" style="height:calc(100vh - 220px)"></div>
       </div>
     </div>
@@ -1076,6 +1122,7 @@ async function pollJob() {
       state.job = snap;
     }
     updateRunPill(state.job);
+    updateJobProgress(state.job);
 
     const box = document.getElementById('log-box');
     const statusLine = document.getElementById('job-status-line');

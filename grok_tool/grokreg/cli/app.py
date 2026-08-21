@@ -405,6 +405,7 @@ async def main(argv: list[str] | None = None) -> None:  # noqa: C901
                 ok_n += 1
             elif st.startswith("error:"):
                 slog.api_err(st)
+            slog.progress(i, 0 if until_stop else batch, ok_n)
 
             # more work?
             more = until_stop or i < batch
