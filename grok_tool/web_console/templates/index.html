@@ -3,65 +3,67 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reg Control Plane</title>
+  <title>Nexus Ops — Automation Command Center</title>
   <meta name="color-scheme" content="light dark" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230F172A'/%3E%3Cpath d='M8 17.2 13 22l11-13' fill='none' stroke='%2322C55E' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="/static/css/style.css?v=1.31" />
+  <link rel="stylesheet" href="/static/css/style.css?v=4.5" />
   <script>
     (function () {
-      const theme = localStorage.getItem('theme') || 'dark';
+      const theme = localStorage.getItem('nexus-theme-v4') || 'light';
       if (theme === 'dark') document.documentElement.classList.add('dark-theme');
       document.documentElement.dataset.theme = theme;
     })();
   </script>
 </head>
 <body>
-  <div class="bg-aurora" aria-hidden="true"><i></i><i></i></div>
+  <div class="app-backdrop" aria-hidden="true"><i></i><i></i><i></i></div>
 
   <div class="app-shell">
-    <aside class="sidebar" id="sidebar">
+    <header class="sidebar" id="sidebar">
       <div class="brand">
-        <div class="brand-mark">R</div>
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M6.5 17.5v-11l11 11v-11" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="6.5" cy="6.5" r="2" fill="currentColor"/><circle cx="17.5" cy="17.5" r="2" fill="currentColor"/>
+          </svg>
+          <i></i>
+        </div>
         <div class="brand-text">
-          <strong>Reg Plane</strong>
-          <span>Control plane</span>
+          <strong>Nexus Ops</strong>
         </div>
       </div>
       <nav class="nav" id="nav" aria-label="Chính">
-        <p class="nav-label">Workspace</p>
+        <p class="nav-label">Vận hành</p>
         <a href="#/register" data-route="#/register" class="nav-item is-active">
-          <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <span>Đăng ký</span>
+          <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><path d="M14 17.5h7M17.5 14v7" stroke-linecap="round"/></svg></span>
+          <span>Bảng điều khiển</span><i class="nav-active-dot"></i>
         </a>
         <a href="#/results" data-route="#/results" class="nav-item">
           <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 10h8M8 14h5" stroke-linecap="round"/></svg></span>
-          <span>Kết quả</span>
+          <span>Kho tài khoản</span><i class="nav-active-dot"></i>
         </a>
         <a href="#/logs" data-route="#/logs" class="nav-item">
           <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6h12M6 12h12M6 18h8" stroke-linecap="round"/></svg></span>
-          <span>Logs</span>
+          <span>Dòng sự kiện</span><i class="nav-active-dot"></i>
         </a>
-        <p class="nav-label">Hệ thống</p>
+        <p class="nav-label">Quản trị</p>
         <a href="#/settings" data-route="#/settings" class="nav-item">
           <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
-          <span>Cài đặt</span>
+          <span>Thiết lập</span><i class="nav-active-dot"></i>
         </a>
         <a href="#/tools" data-route="#/tools" class="nav-item">
           <span class="nav-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 8l8-4 8 4-8 4-8-4z"/><path d="M4 16l8 4 8-4M4 12l8 4 8-4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <span>Tools</span>
+          <span>Hệ sinh thái</span><i class="nav-active-dot"></i>
         </a>
       </nav>
       <div class="sidebar-foot">
         <div class="run-pill" id="run-pill">
-          <i class="dot"></i>
-          <span id="run-pill-text">Idle</span>
+          <span class="status-orb"><i class="dot"></i></span>
+          <span><b id="run-pill-text">Sẵn sàng</b><small>Trạng thái hệ thống</small></span>
         </div>
-        <div class="version">v1.3 · UI Pro Max</div>
+        <div class="version"><span>NEXUS CORE</span><span>v2.0</span></div>
       </div>
-    </aside>
+    </header>
 
     <button class="mobile-menu" id="mobile-menu" type="button" aria-label="Menu">
       <span></span><span></span><span></span>
@@ -71,14 +73,16 @@
     <div class="content-shell">
       <header class="topbar">
         <div class="topbar-copy">
-          <p class="eyebrow" id="page-eyebrow">Task Console</p>
-          <h1 id="page-title">Đăng ký</h1>
+          <h1 id="page-title">Bảng điều khiển</h1>
+          <p class="eyebrow" id="page-eyebrow">Thiết lập và theo dõi các phiên đăng ký.</p>
         </div>
         <div class="topbar-actions">
-          <button id="theme-toggle" class="theme-toggle-btn" type="button" title="Đổi theme">
+          <div class="health-chip"><i></i><span>API Online</span></div>
+          <button id="theme-toggle" class="theme-toggle-btn" type="button" title="Đổi giao diện" aria-label="Đổi giao diện">
             <svg class="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
             <svg class="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
           </button>
+          <div class="operator-avatar" title="Local operator">OP</div>
         </div>
       </header>
       <main id="main-content" class="main-content"></main>
@@ -86,6 +90,6 @@
   </div>
 
   <div id="toast-container" class="toast-container" aria-live="polite"></div>
-  <script type="module" src="/static/js/app.js?v=1.36"></script>
+  <script type="module" src="/static/js/app.js?v=4.5"></script>
 </body>
 </html>

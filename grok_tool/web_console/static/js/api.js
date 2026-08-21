@@ -37,6 +37,11 @@ export const stopJob = (job_id = null) =>
     body: JSON.stringify({ job_id }),
   });
 export const getConfigSummary = () => api('/api/config/summary');
+export const updateConfig = (config) =>
+  api('/api/config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
 export const getHealth = () => api('/api/health');
 export const getHotmails = (id) => api(`/api/tools/${id}/hotmails`);
 export const importHotmails = (id, text, mode = 'append') =>

@@ -1,5 +1,5 @@
 """
-Web control plane — multi-tool registration console.
+Nexus Ops — multi-tool automation command center.
 Run:  python -m web_console.app
    or CHAY_WEB.bat
 """
@@ -29,7 +29,7 @@ from web_console.plugins import all_plugins, get_plugin
 STATIC = Path(__file__).resolve().parent / "static"
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 
-app = FastAPI(title="Reg Control Plane", version=__version__)
+app = FastAPI(title="Nexus Ops", version=__version__)
 jobs = JobManager(ROOT)
 
 if STATIC.exists():
@@ -43,6 +43,31 @@ class StartBody(BaseModel):
 
 class StopBody(BaseModel):
     job_id: Optional[str] = None
+
+
+class Sub2ConfigBody(BaseModel):
+    enabled: bool = True
+    mode: str = "auto"
+    url: str = ""
+    group: str = "grok free"
+    name_prefix: str = "grok free"
+    user: str = ""
+    password: Optional[str] = None
+    api_token: Optional[str] = None
+
+
+class GoogleSheetsConfigBody(BaseModel):
+    enabled: bool = False
+    spreadsheet_id: str = ""
+    webapp_url: Optional[str] = None
+
+
+class ConfigUpdateBody(BaseModel):
+    sub2api: Sub2ConfigBody
+    google_sheets: GoogleSheetsConfigBody
+    force_guest_on_start: bool = True
+    open_grok_after_success: bool = True
+    fixed_password: Optional[str] = None
 
 
 class HotmailImportBody(BaseModel):
@@ -269,6 +294,8 @@ def config_summary():
             "group": sub.get("group", "grok free"),
             "name_prefix": sub.get("name_prefix", "grok free"),
             "user": sub.get("sub2api_user", ""),
+            "password_set": bool(sub.get("sub2api_pass")),
+            "api_token_set": bool(sub.get("sub2api_api_token")),
         },
         "google_sheets": {
             "enabled": gs.get("enabled", False),
@@ -278,6 +305,62 @@ def config_summary():
         "force_guest_on_start": raw.get("force_guest_on_start"),
         "open_grok_after_success": raw.get("open_grok_after_success"),
     }
+
+
+@app.put("/api/config")
+def update_config(body: ConfigUpdateBody):
+    """Update the UI-editable config allowlist without exposing stored secrets."""
+    cfg_path = ROOT / "config.json"
+    try:
+        raw: dict[str, Any] = {}
+        if cfg_path.exists():
+            raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+
+        mode = body.sub2api.mode.strip().lower()
+        if mode not in {"auto", "api", "sso", "browser"}:
+            raise HTTPException(422, "Sub2API mode không hợp lệ")
+
+        sub = dict(raw.get("sub2api") or {})
+        sub.update({
+            "enabled": body.sub2api.enabled,
+            "mode": mode,
+            "sub2api_url": body.sub2api.url.strip(),
+            "group": body.sub2api.group.strip(),
+            "name_prefix": body.sub2api.name_prefix.strip(),
+            "sub2api_user": body.sub2api.user.strip(),
+        })
+        if body.sub2api.password:
+            sub["sub2api_pass"] = body.sub2api.password
+        if body.sub2api.api_token:
+            sub["sub2api_api_token"] = body.sub2api.api_token
+
+        sheets = dict(raw.get("google_sheets") or {})
+        sheets.update({
+            "enabled": body.google_sheets.enabled,
+            "spreadsheet_id": body.google_sheets.spreadsheet_id.strip(),
+        })
+        if body.google_sheets.webapp_url:
+            sheets["webapp_url"] = body.google_sheets.webapp_url.strip()
+
+        raw["sub2api"] = sub
+        raw["google_sheets"] = sheets
+        raw["force_guest_on_start"] = body.force_guest_on_start
+        raw["open_grok_after_success"] = body.open_grok_after_success
+        if body.fixed_password:
+            raw["fixed_password"] = body.fixed_password
+
+        tmp_path = cfg_path.with_suffix(".json.tmp")
+        tmp_path.write_text(
+            json.dumps(raw, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        tmp_path.replace(cfg_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Không lưu được config: {e}")
+
+    return {"ok": True, "message": "Đã lưu thiết lập", "config": config_summary()}
 
 
 def main():
@@ -298,7 +381,7 @@ def main():
     host = os.environ.get("WEB_HOST") or "127.0.0.1"
     port = int(os.environ.get("WEB_PORT") or 8787)
     url = f"http://{host}:{port}/"
-    banner = f"\n  Reg Control Plane  v{__version__}\n  Open: {url}\n"
+    banner = f"\n  Nexus Ops  v{__version__}\n  Open: {url}\n"
     try:
         print(banner)
     except Exception:

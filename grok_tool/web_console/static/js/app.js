@@ -1,5 +1,5 @@
-import * as api from './api.js?v=1.36';
-import { toast } from './toast.js?v=1.36';
+import * as api from './api.js?v=3.3';
+import { toast } from './toast.js?v=3.3';
 
 const getTools = api.getTools;
 const getToolStats = api.getToolStats;
@@ -8,6 +8,7 @@ const getCurrentJob = api.getCurrentJob;
 const startJob = api.startJob;
 const stopJob = api.stopJob;
 const getConfigSummary = api.getConfigSummary;
+const updateConfig = api.updateConfig;
 const getHealth = api.getHealth;
 const getHotmails =
   typeof api.getHotmails === 'function'
@@ -21,11 +22,11 @@ const importHotmails =
       };
 
 const PAGE_META = {
-  '#/register': { title: 'Đăng ký', eyebrow: 'Control Plane' },
-  '#/results': { title: 'Kết quả', eyebrow: 'Accounts & Status' },
-  '#/logs': { title: 'Logs', eyebrow: 'Live Stream' },
-  '#/settings': { title: 'Cài đặt', eyebrow: 'System Config' },
-  '#/tools': { title: 'Tools', eyebrow: 'Plugin Registry' },
+  '#/register': { title: 'Bảng điều khiển', eyebrow: 'Thiết lập và theo dõi các phiên đăng ký.' },
+  '#/results': { title: 'Kho tài khoản', eyebrow: 'Quản lý tài khoản và trạng thái xử lý.' },
+  '#/logs': { title: 'Dòng sự kiện', eyebrow: 'Theo dõi tiến trình và lỗi theo thời gian thực.' },
+  '#/settings': { title: 'Thiết lập', eyebrow: 'Quản lý kết nối và hành vi mặc định của hệ thống.' },
+  '#/tools': { title: 'Hệ sinh thái', eyebrow: 'Danh sách nền tảng đang kết nối với Nexus Ops.' },
 };
 
 const state = {
@@ -68,9 +69,20 @@ function brandIconHtml(t) {
 function initChrome() {
   const btn = document.getElementById('theme-toggle');
   btn?.addEventListener('click', () => {
-    const dark = document.documentElement.classList.toggle('dark-theme');
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    const root = document.documentElement;
+    const sequence = Number(root.dataset.themeSequence || 0) + 1;
+    root.dataset.themeSequence = String(sequence);
+    root.classList.add('theme-switching');
+    const dark = root.classList.toggle('dark-theme');
+    localStorage.setItem('nexus-theme-v4', dark ? 'dark' : 'light');
+    root.dataset.theme = dark ? 'dark' : 'light';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (root.dataset.themeSequence === String(sequence)) {
+          root.classList.remove('theme-switching');
+        }
+      });
+    });
   });
 
   const menu = document.getElementById('mobile-menu');
@@ -99,7 +111,7 @@ function setActiveNav(hash) {
   const e = document.getElementById('page-eyebrow');
   if (t) t.textContent = meta.title;
   if (e) e.textContent = meta.eyebrow;
-  document.title = `${meta.title} · Reg Control Plane`;
+  document.title = `${meta.title} · Nexus Ops`;
 }
 
 function revealLiveLog() {
@@ -117,7 +129,7 @@ function updateRunPill(job) {
   if (!pill || !text) return;
   const running = job && ['running', 'pending', 'stopping'].includes(job.status);
   pill.classList.toggle('is-running', !!running);
-  if (!job || job.status === 'idle') text.textContent = 'Idle';
+  if (!job || job.status === 'idle') text.textContent = 'Sẵn sàng';
   else text.textContent = `${job.tool_id || 'job'} · ${job.status}`;
 }
 
@@ -380,15 +392,17 @@ async function renderRegister(root) {
       ${stats.blurb ? `<div class="card-sub" style="margin-top:-6px">${esc(stats.blurb)}</div>` : ''}
 
       <div class="workspace">
-        <div class="card">
+        <div class="card control-card">
           <div class="card-head">
             <div>
-              <div class="card-title">Cấu hình</div>
-              <div class="card-sub">Chọn tool, mail, số lượng. Stop ghi data/STOP.</div>
+              <div class="card-title">Thiết lập phiên chạy</div>
+              <div class="card-sub">Chọn nền tảng, nguồn email và thông số vận hành.</div>
             </div>
+            <span class="badge badge-ready">Ready</span>
           </div>
 
-          <div class="tool-grid" style="margin-bottom:16px">
+          <div class="section-label">01 · Chọn nền tảng</div>
+          <div class="tool-grid" style="margin-bottom:19px">
             ${state.tools
               .map((t) => {
                 const soon = t.status === 'coming_soon';
@@ -403,6 +417,7 @@ async function renderRegister(root) {
               .join('')}
           </div>
 
+          <div class="section-label">02 · Thông số chạy</div>
           <div class="form-stack form-grid" id="tool-form">
             ${(tool.fields || [])
               .map((f) => {
@@ -469,8 +484,8 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
             <div style="display:flex;align-items:center;gap:10px;min-width:0">
               <span class="term-dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <div>
-                <div class="card-title">Live log</div>
-                <div class="card-sub" id="job-status-line">${job ? `${esc(job.tool_id)} · ${esc(job.status)}` : 'Chưa có job'}</div>
+              <div class="card-title">Live activity</div>
+              <div class="card-sub" id="job-status-line">${job ? `${esc(job.tool_id)} · ${esc(job.status)}` : 'Đang chờ phiên chạy mới'}</div>
               </div>
             </div>
             <div class="log-actions">
@@ -757,6 +772,10 @@ async function renderResults(root) {
 
   root.innerHTML = `
     <div class="page">
+      <div class="page-banner">
+        <div><div class="hero-kicker"><i></i> Data vault</div><h2>Kho dữ liệu tài khoản</h2><p>Dữ liệu tài khoản và trạng thái xử lý mới nhất của ${esc(toolId)}.</p></div>
+        <span class="page-banner-mark">${rows.length} RECORDS</span>
+      </div>
       <div class="grid-4">
         <div class="stat-card info"><div class="stat-label">Email unique</div><div class="stat-value">${stats.unique_emails ?? stats.total ?? 0}</div>
           <div class="card-sub" style="margin-top:4px">${stats.attempts ?? 0} lượt thử</div></div>
@@ -819,6 +838,10 @@ async function renderLogs(root) {
   const job = state.job;
   root.innerHTML = `
     <div class="page">
+      <div class="page-banner">
+        <div><div class="hero-kicker"><i></i> Activity stream</div><h2>Dòng sự kiện trực tiếp</h2><p>Theo dõi chi tiết tiến trình, cảnh báo và lỗi trong thời gian thực.</p></div>
+        <span class="page-banner-mark">LIVE STREAM</span>
+      </div>
       <div class="card">
         <div class="log-head">
           <div>
@@ -878,44 +901,90 @@ async function renderSettings(root) {
   const gs = sum.google_sheets || {};
   root.innerHTML = `
     <div class="page">
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title" style="margin-bottom:14px">Sub2API</div>
-          <dl class="kv">
-            <dt>Enabled</dt><dd>${sub.enabled ? 'Yes' : 'No'}</dd>
-            <dt>Mode</dt><dd class="mono">${esc(sub.mode)}</dd>
-            <dt>URL</dt><dd class="mono">${esc(sub.url)}</dd>
-            <dt>Group</dt><dd>${esc(sub.group)}</dd>
-            <dt>Name prefix</dt><dd>${esc(sub.name_prefix)}</dd>
-            <dt>User</dt><dd class="mono">${esc(sub.user)}</dd>
-          </dl>
-          <p class="card-sub" style="margin-top:14px">Sửa chi tiết trong <span class="mono">config.json</span> · mode=auto ưu tiên SSO API.</p>
-        </div>
-        <div class="card">
-          <div class="card-title" style="margin-bottom:14px">Google Sheet & Session</div>
-          <dl class="kv">
-            <dt>Sheet</dt><dd>${gs.enabled ? 'On' : 'Off'}</dd>
-            <dt>Spreadsheet</dt><dd class="mono">${esc(gs.spreadsheet_id)}</dd>
-            <dt>Webapp</dt><dd>${gs.webapp_set ? 'Configured' : '—'}</dd>
-            <dt>Force guest</dt><dd>${sum.force_guest_on_start ? 'Yes' : 'No'}</dd>
-            <dt>Open Grok after</dt><dd>${sum.open_grok_after_success ? 'Yes' : 'No'}</dd>
-            <dt>Fixed password</dt><dd>${sum.fixed_password_set ? 'Set' : '—'}</dd>
-          </dl>
-        </div>
+      <div class="page-banner">
+        <div><div class="hero-kicker"><i></i> System settings</div><h2>Thiết lập hệ thống</h2><p>Tổng quan các kết nối và chính sách đang được áp dụng.</p></div>
+        <span class="page-banner-mark">EDITABLE</span>
       </div>
-      <div class="card">
-        <div class="card-title" style="margin-bottom:8px">Thêm tool mới</div>
-        <p class="card-sub" style="margin-bottom:12px">
-          Tạo file <span class="mono">web_console/plugins/your_tool.py</span> kế thừa <span class="mono">BaseToolPlugin</span>,
-          rồi đăng ký trong <span class="mono">plugins/__init__.py</span>. UI tự hiện tile + form fields.
-        </p>
-        <pre class="log-console" style="height:auto;max-height:220px;padding:14px">class MyTool(BaseToolPlugin):
-    meta = ToolMeta(id="mytool", name="My Tool", ...)
-    def build_command(self, params, root): ...
-    def parse_results(self, root, limit=200): ...</pre>
-      </div>
+      <form id="settings-form" class="settings-form">
+        <div class="grid-2">
+          <section class="card settings-card">
+            <div class="card-head">
+              <div><div class="card-title">Sub2API</div><div class="card-sub">Kết nối và thông tin xác thực.</div></div>
+              <label class="switch"><input id="cfg-sub-enabled" type="checkbox" ${sub.enabled ? 'checked' : ''}><span></span></label>
+            </div>
+            <div class="form-grid">
+              <div class="field"><label>Chế độ</label><select id="cfg-sub-mode">
+                ${['auto', 'api', 'sso', 'browser'].map((v) => `<option value="${v}" ${sub.mode === v ? 'selected' : ''}>${v}</option>`).join('')}
+              </select></div>
+              <div class="field"><label>URL</label><input id="cfg-sub-url" type="text" value="${esc(sub.url)}" placeholder="http://localhost:8080"></div>
+              <div class="field"><label>Group</label><input id="cfg-sub-group" type="text" value="${esc(sub.group)}"></div>
+              <div class="field"><label>Name prefix</label><input id="cfg-sub-prefix" type="text" value="${esc(sub.name_prefix)}"></div>
+              <div class="field span-2"><label>User</label><input id="cfg-sub-user" type="text" value="${esc(sub.user)}" autocomplete="username"></div>
+              <div class="field"><label>Password</label><input id="cfg-sub-pass" type="password" value="" autocomplete="new-password" placeholder="${sub.password_set ? 'Đã cấu hình · để trống để giữ nguyên' : 'Chưa cấu hình'}"></div>
+              <div class="field"><label>API token</label><input id="cfg-sub-token" type="password" value="" autocomplete="off" placeholder="${sub.api_token_set ? 'Đã cấu hình · để trống để giữ nguyên' : 'Chưa cấu hình'}"></div>
+            </div>
+          </section>
+
+          <section class="card settings-card">
+            <div class="card-head">
+              <div><div class="card-title">Google Sheets</div><div class="card-sub">Đích xuất dữ liệu sau khi chạy.</div></div>
+              <label class="switch"><input id="cfg-sheet-enabled" type="checkbox" ${gs.enabled ? 'checked' : ''}><span></span></label>
+            </div>
+            <div class="form-stack">
+              <div class="field"><label>Spreadsheet ID</label><input id="cfg-sheet-id" type="text" value="${esc(gs.spreadsheet_id)}" placeholder="1Abc..."></div>
+              <div class="field"><label>Webapp URL</label><input id="cfg-sheet-webapp" type="password" value="" autocomplete="off" placeholder="${gs.webapp_set ? 'Đã cấu hình · để trống để giữ nguyên' : 'Chưa cấu hình'}"></div>
+              <div class="settings-note">Thông tin nhạy cảm không được tải ngược ra trình duyệt. Nhập giá trị mới chỉ khi muốn thay đổi.</div>
+            </div>
+          </section>
+        </div>
+
+        <section class="card settings-card">
+          <div class="card-head"><div><div class="card-title">Phiên & bảo mật</div><div class="card-sub">Các hành vi mặc định cho phiên đăng ký mới.</div></div></div>
+          <div class="settings-options">
+            <label class="check-row"><input id="cfg-force-guest" type="checkbox" ${sum.force_guest_on_start ? 'checked' : ''}><span>Force guest khi bắt đầu</span></label>
+            <label class="check-row"><input id="cfg-open-grok" type="checkbox" ${sum.open_grok_after_success ? 'checked' : ''}><span>Mở Grok sau khi thành công</span></label>
+            <div class="field"><label>Fixed password</label><input id="cfg-fixed-pass" type="password" value="" autocomplete="new-password" placeholder="${sum.fixed_password_set ? 'Đã cấu hình · để trống để giữ nguyên' : 'Chưa cấu hình'}"></div>
+          </div>
+        </section>
+
+        <div class="settings-actions">
+          <div><strong>config.json</strong><span>Thay đổi áp dụng cho các job bắt đầu sau khi lưu.</span></div>
+          <div class="btn-row"><button type="button" class="btn btn-ghost" id="btn-settings-reset">Hoàn tác</button><button type="submit" class="btn btn-primary" id="btn-settings-save">Lưu thiết lập</button></div>
+        </div>
+      </form>
     </div>
   `;
+
+  const form = root.querySelector('#settings-form');
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const save = root.querySelector('#btn-settings-save');
+    if (save) { save.disabled = true; save.textContent = 'Đang lưu…'; }
+    const val = (id) => root.querySelector(id)?.value || '';
+    const checked = (id) => !!root.querySelector(id)?.checked;
+    try {
+      const result = await updateConfig({
+        sub2api: {
+          enabled: checked('#cfg-sub-enabled'), mode: val('#cfg-sub-mode'), url: val('#cfg-sub-url'),
+          group: val('#cfg-sub-group'), name_prefix: val('#cfg-sub-prefix'), user: val('#cfg-sub-user'),
+          password: val('#cfg-sub-pass') || null, api_token: val('#cfg-sub-token') || null,
+        },
+        google_sheets: {
+          enabled: checked('#cfg-sheet-enabled'), spreadsheet_id: val('#cfg-sheet-id'),
+          webapp_url: val('#cfg-sheet-webapp') || null,
+        },
+        force_guest_on_start: checked('#cfg-force-guest'),
+        open_grok_after_success: checked('#cfg-open-grok'),
+        fixed_password: val('#cfg-fixed-pass') || null,
+      });
+      toast(result.message || 'Đã lưu thiết lập', 'ok');
+      await renderSettings(root);
+    } catch (error) {
+      toast(error.message || 'Không lưu được thiết lập', 'err');
+      if (save) { save.disabled = false; save.textContent = 'Lưu thiết lập'; }
+    }
+  });
+  root.querySelector('#btn-settings-reset')?.addEventListener('click', () => renderSettings(root));
 }
 
 async function renderTools(root) {
@@ -925,11 +994,15 @@ async function renderTools(root) {
   }
   root.innerHTML = `
     <div class="page">
+      <div class="page-banner">
+        <div><div class="hero-kicker"><i></i> Connected apps</div><h2>Hệ sinh thái Nexus</h2><p>Quản lý các nền tảng đã kết nối với Nexus Ops.</p></div>
+        <span class="page-banner-mark">${state.tools.length} PLUGINS</span>
+      </div>
       <div class="card">
         <div class="card-head">
           <div>
-            <div class="card-title">Plugin registry</div>
-            <div class="card-sub">Các tool gắn vào control plane. Placeholder = sắp làm.</div>
+            <div class="card-title">Danh mục nền tảng</div>
+            <div class="card-sub">Các công cụ kết nối với Nexus Core. Placeholder = sắp triển khai.</div>
           </div>
         </div>
         <div class="tool-grid">
