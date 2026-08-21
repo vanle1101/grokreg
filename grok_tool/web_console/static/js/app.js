@@ -147,6 +147,18 @@ function normalizedProgress(job) {
   return { completed, total, ok, failed, percent, continuous: total === 0 };
 }
 
+function formatElapsed(job) {
+  const started = Number(job?.created_at || job?.started_at || 0);
+  if (!started) return '00:00:00';
+  const finished = Number(job?.ended_at || 0);
+  const end = finished > 0 ? finished : Date.now() / 1000;
+  const seconds = Math.max(0, Math.floor(end - started));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remaining = seconds % 60;
+  return [hours, minutes, remaining].map((value) => String(value).padStart(2, '0')).join(':');
+}
+
 function progressContent(job) {
   const p = normalizedProgress(job);
   if (!p) return '';
@@ -168,6 +180,7 @@ function progressContent(job) {
     <div class="progress-detail">
       <span class="progress-ok">${p.ok} thành công</span>
       <span class="progress-fail">${p.failed} thất bại</span>
+      <span class="progress-elapsed">${job.ended_at ? 'Tổng thời gian' : 'Đã chạy'} <strong>${formatElapsed(job)}</strong></span>
     </div>`;
 }
 
