@@ -6,9 +6,16 @@ capcut/**/*.pyc
 capcut/**/*.log
 capcut/**/STOP
 
-# Never publish anything except grok_tool source
+# Include all tool source and sub2api
 /*
 !/grok_tool/
+!/Heygen/
+!/capcut/
+!/zai/
+!/canva/
+!/claude/
+!/openai/
+!/sub2api/
 !/.gitignore
 !/README.md
 !/LICENSE

@@ -1,0 +1,3 @@
+# Accounts
+# email|password_or_token|status
+canva_1787497878_916@azpopmail.com|kIH2ZMFEnstxkS|success:registered

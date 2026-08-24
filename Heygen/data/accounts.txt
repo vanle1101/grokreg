@@ -1,0 +1,6 @@
+# Accounts
+# email|password_or_token|status
+user_1787497568_894@azpopmail.com|GUHDtl%NqXgZqK|success:registered
+ustons8auu@mailbavl.com|FqLSM%9nzqlhoY|success:magic_link_registered
+vcjkxqziy8@mailcltm.com|magic_link_registered|success:registered
+if3qnbzcnv@mailregcl.com|magic_link_registered|success:registered

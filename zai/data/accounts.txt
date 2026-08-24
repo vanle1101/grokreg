@@ -1,0 +1,3 @@
+# Accounts
+# email|password_or_token|status
+zai_1787497775_134@guerrillamail.com|e@Q0TZu3LxH1HF|success:registered_glm_quota_ok
