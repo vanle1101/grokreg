@@ -835,7 +835,7 @@ async def _native_create_email(
             )
         )
         has_code = bool(probe.get("hasCode") or probe.get("emailed"))
-        if has_code:
+        if has_code or step == "otp":
             tok = str((sink or {}).get("token") or "").strip()
             slog.api_ok(
                 f"Castle OTP input token_len={len(tok)} post="

@@ -151,12 +151,31 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def get_latest_for_tool(self, tool_id: str) -> Optional[Job]:
+        with self._lock:
+            tool_jobs = [j for j in self._jobs.values() if j.tool_id == tool_id]
+            if not tool_jobs:
+                return None
+            # Return active job if running, else newest by created_at
+            running = [j for j in tool_jobs if j.status in ("running", "stopping", "pending")]
+            if running:
+                return running[0]
+            return max(tool_jobs, key=lambda j: j.created_at)
+
     def clear_logs(self, job_id: str) -> tuple[Job, int]:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
                 raise KeyError(job_id)
             return job, job.clear_logs()
+
+    def clear_tool_logs(self, tool_id: str) -> int:
+        with self._lock:
+            total_removed = 0
+            for job in self._jobs.values():
+                if job.tool_id == tool_id:
+                    total_removed += job.clear_logs()
+            return total_removed
 
     def start(self, tool_id: str, params: dict[str, Any]) -> Job:
         plugin = get_plugin(tool_id)

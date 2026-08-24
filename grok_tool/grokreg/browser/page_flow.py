@@ -2845,6 +2845,12 @@ def _is_privacy_noise_error(msg: str) -> bool:
         or "cai dat cookie" in sl
         or "từ chối tất cả" in sl
         or "tu choi tat ca" in sl
+        # Resend timer / OTP UI banner (false-positive alert)
+        or "didn't receive a code" in sl
+        or "did not receive a code" in sl
+        or "resend (" in sl
+        or "chưa nhận được mã" in sl
+        or "gửi lại (" in sl
     )
 
 

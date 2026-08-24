@@ -195,10 +195,14 @@ def list_jobs():
 
 
 @app.get("/api/jobs/current")
-def current_job(log_from: int = 0):
+def current_job(tool_id: Optional[str] = None, log_from: int = 0):
+    if tool_id:
+        j = jobs.get_latest_for_tool(tool_id)
+        if j:
+            return j.snapshot(log_from=log_from)
+        return {"status": "idle", "tool_id": tool_id, "logs": [], "running": False}
     j = jobs.current()
     if not j:
-        # last job if any
         allj = jobs.list_jobs(1)
         if allj:
             last = jobs.get(allj[0]["id"])
@@ -239,174 +243,132 @@ def clear_job_logs(job_id: str):
     return {"ok": True, "removed": removed, "job": job.snapshot()}
 
 
+@app.delete("/api/tools/{tool_id}/logs")
+def clear_tool_logs(tool_id: str):
+    removed = jobs.clear_tool_logs(tool_id)
+    latest = jobs.get_latest_for_tool(tool_id)
+    return {"ok": True, "removed": removed, "tool_id": tool_id, "job": (latest.snapshot() if latest else None)}
+
+
 @app.get("/api/logs/stream")
-async def log_stream():
-    """SSE stream of current job logs."""
+async def log_stream(tool_id: Optional[str] = None):
+    """SSE stream of job logs (optionally filtered by tool_id)."""
 
     async def gen():
         last_seq = 0
         last_status = ""
         while True:
-            j = jobs.current()
+            j = jobs.get_latest_for_tool(tool_id) if tool_id else jobs.current()
             if j is None:
-                # peek most recent finished
-                listed = jobs.list_jobs(1)
-                if listed:
-                    j = jobs.get(listed[0]["id"])
+                if not tool_id:
+                    allj = jobs.list_jobs(1)
+                    if allj:
+                        j = jobs.get(allj[0]["id"])
             if j:
-                snap = j.snapshot(log_from=last_seq)
-                if snap["log_seq"] > last_seq or snap["status"] != last_status:
-                    last_seq = snap["log_seq"]
-                    last_status = snap["status"]
-                    payload = json.dumps(snap, ensure_ascii=False)
-                    yield f"data: {payload}\n\n"
-                if snap["status"] not in ("running", "pending", "stopping"):
-                    # one more tick then idle heartbeat
-                    await asyncio.sleep(1.0)
-            else:
-                yield f"data: {json.dumps({'status': 'idle', 'running': False, 'logs': []})}\n\n"
-            await asyncio.sleep(0.6)
+                cur_seq = j._log_seq
+                cur_status = j.status
+                if cur_seq != last_seq or cur_status != last_status:
+                    last_seq = cur_seq
+                    last_status = cur_status
+                    payload = j.snapshot()
+                    yield f"data: {json.dumps(payload)}\n\n"
+            await asyncio.sleep(0.8)
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
-
-
-@app.get("/api/config")
-def get_config():
-    cfg_path = ROOT / "config.json"
-    if not cfg_path.exists():
-        return {}
-    try:
-        return json.loads(cfg_path.read_text(encoding="utf-8"))
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/config/summary")
-def config_summary():
-    """Safe subset for UI (no full secrets dump in list)."""
-    cfg_path = ROOT / "config.json"
-    raw: dict[str, Any] = {}
-    if cfg_path.exists():
-        try:
-            raw = json.loads(cfg_path.read_text(encoding="utf-8"))
-        except Exception:
-            raw = {}
-    sub = raw.get("sub2api") or {}
-    gs = raw.get("google_sheets") or {}
+def get_config_summary():
+    from grokreg.core.config import load_config
+
+    cfg = load_config()
     return {
-        "email_provider": raw.get("email_provider"),
-        "fixed_password_set": bool(raw.get("fixed_password")),
         "sub2api": {
-            "enabled": sub.get("enabled", True),
-            "mode": sub.get("mode", "auto"),
-            "url": sub.get("sub2api_url", ""),
-            "group": sub.get("group", "grok free"),
-            "name_prefix": sub.get("name_prefix", "grok free"),
-            "user": sub.get("sub2api_user", ""),
-            "password_set": bool(sub.get("sub2api_pass")),
-            "api_token_set": bool(sub.get("sub2api_api_token")),
+            "enabled": cfg.get("enable_sub2api", True),
+            "mode": cfg.get("sub2api_mode", "auto"),
+            "url": cfg.get("sub2api_url", ""),
+            "group": cfg.get("sub2api_group", "grok free"),
+            "name_prefix": cfg.get("sub2api_name_prefix", "grok free"),
+            "user": cfg.get("sub2api_user", ""),
+            "has_password": bool(cfg.get("sub2api_password")),
+            "has_token": bool(cfg.get("sub2api_token")),
         },
         "google_sheets": {
-            "enabled": gs.get("enabled", False),
-            "spreadsheet_id": gs.get("spreadsheet_id", ""),
-            "webapp_set": bool(gs.get("webapp_url")),
+            "enabled": cfg.get("enable_google_sheets", False),
+            "spreadsheet_id": cfg.get("google_sheets_spreadsheet_id", ""),
+            "has_webapp": bool(cfg.get("google_sheets_webapp_url")),
         },
-        "force_guest_on_start": raw.get("force_guest_on_start"),
-        "open_grok_after_success": raw.get("open_grok_after_success"),
+        "force_guest_on_start": cfg.get("force_guest_on_start", True),
+        "open_grok_after_success": cfg.get("open_grok_after_success", True),
+        "fixed_password": cfg.get("fixed_password"),
     }
 
 
 @app.put("/api/config")
-def update_config(body: ConfigUpdateBody):
-    """Update the UI-editable config allowlist without exposing stored secrets."""
-    cfg_path = ROOT / "config.json"
-    try:
-        raw: dict[str, Any] = {}
-        if cfg_path.exists():
-            raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+def update_config_api(body: ConfigUpdateBody):
+    from grokreg.core.config import load_config, save_config
 
-        mode = body.sub2api.mode.strip().lower()
-        if mode not in {"auto", "api", "sso", "browser"}:
-            raise HTTPException(422, "Sub2API mode không hợp lệ")
+    cfg = load_config()
+    cfg["enable_sub2api"] = body.sub2api.enabled
+    cfg["sub2api_mode"] = body.sub2api.mode
+    cfg["sub2api_url"] = body.sub2api.url
+    cfg["sub2api_group"] = body.sub2api.group
+    cfg["sub2api_name_prefix"] = body.sub2api.name_prefix
+    cfg["sub2api_user"] = body.sub2api.user
+    if body.sub2api.password is not None:
+        cfg["sub2api_password"] = body.sub2api.password
+    if body.sub2api.api_token is not None:
+        cfg["sub2api_token"] = body.sub2api.api_token
 
-        sub = dict(raw.get("sub2api") or {})
-        sub.update({
-            "enabled": body.sub2api.enabled,
-            "mode": mode,
-            "sub2api_url": body.sub2api.url.strip(),
-            "group": body.sub2api.group.strip(),
-            "name_prefix": body.sub2api.name_prefix.strip(),
-            "sub2api_user": body.sub2api.user.strip(),
-        })
-        if body.sub2api.password:
-            sub["sub2api_pass"] = body.sub2api.password
-        if body.sub2api.api_token:
-            sub["sub2api_api_token"] = body.sub2api.api_token
+    cfg["enable_google_sheets"] = body.google_sheets.enabled
+    cfg["google_sheets_spreadsheet_id"] = body.google_sheets.spreadsheet_id
+    if body.google_sheets.webapp_url is not None:
+        cfg["google_sheets_webapp_url"] = body.google_sheets.webapp_url
 
-        sheets = dict(raw.get("google_sheets") or {})
-        sheets.update({
-            "enabled": body.google_sheets.enabled,
-            "spreadsheet_id": body.google_sheets.spreadsheet_id.strip(),
-        })
-        if body.google_sheets.webapp_url:
-            sheets["webapp_url"] = body.google_sheets.webapp_url.strip()
+    cfg["force_guest_on_start"] = body.force_guest_on_start
+    cfg["open_grok_after_success"] = body.open_grok_after_success
+    cfg["fixed_password"] = body.fixed_password
 
-        raw["sub2api"] = sub
-        raw["google_sheets"] = sheets
-        raw["force_guest_on_start"] = body.force_guest_on_start
-        raw["open_grok_after_success"] = body.open_grok_after_success
-        if body.fixed_password:
-            raw["fixed_password"] = body.fixed_password
-
-        tmp_path = cfg_path.with_suffix(".json.tmp")
-        tmp_path.write_text(
-            json.dumps(raw, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        tmp_path.replace(cfg_path)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Không lưu được config: {e}")
-
-    return {"ok": True, "message": "Đã lưu thiết lập", "config": config_summary()}
+    save_config(cfg)
+    return {"ok": True, "message": "Đã lưu cấu hình"}
 
 
 def main():
-    import os
+    import argparse
     import uvicorn
 
-    # Windows console often defaults to cp1252 — force UTF-8 so prints don't crash
-    os.environ.setdefault("PYTHONUTF8", "1")
-    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    try:
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    parser = argparse.ArgumentParser(description="Nexus Ops Web Console")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8787)
+    parser.add_argument("--no-browser", action="store_true")
+    args = parser.parse_args()
 
-    host = os.environ.get("WEB_HOST") or "127.0.0.1"
-    port = int(os.environ.get("WEB_PORT") or 8787)
-    url = f"http://{host}:{port}/"
-    banner = f"\n  Nexus Ops  v{__version__}\n  Open: {url}\n"
-    try:
-        print(banner)
-    except Exception:
-        sys.stdout.buffer.write(banner.encode("utf-8", errors="replace"))
-        sys.stdout.buffer.write(b"\n")
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass
-    uvicorn.run(
-        "web_console.app:app",
-        host=host,
-        port=port,
-        reload=False,
-        log_level="info",
-    )
+    url = f"http://{args.host}:{args.port}"
+    print(f"=== Nexus Ops Console v{__version__} ===")
+    print(f"Server: {url}")
+    print(f"Root:   {ROOT}")
+
+    if not args.no_browser:
+
+        def _open():
+            import time
+
+            time.sleep(1.0)
+            webbrowser.open(url)
+
+        import threading
+
+        threading.Thread(target=_open, daemon=True).start()
+
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

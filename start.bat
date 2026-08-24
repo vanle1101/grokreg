@@ -1,4 +1,4 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0\grok_tool"
-call start.bat
+cd /d "%~dp0grok_tool"
+call CHAY_WEB.bat

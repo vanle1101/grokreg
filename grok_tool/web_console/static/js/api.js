@@ -24,8 +24,13 @@ export const getTools = () => api('/api/tools');
 export const getToolStats = (id) => api(`/api/tools/${id}/stats`);
 export const getToolResults = (id, limit = 100) =>
   api(`/api/tools/${id}/results?limit=${limit}`);
-export const getCurrentJob = (logFrom = 0) =>
-  api(`/api/jobs/current?log_from=${logFrom}`);
+export const getCurrentJob = (toolId = '', logFrom = 0) => {
+  const q = new URLSearchParams();
+  if (toolId) q.set('tool_id', toolId);
+  if (logFrom) q.set('log_from', String(logFrom));
+  const qs = q.toString();
+  return api(`/api/jobs/current${qs ? '?' + qs : ''}`);
+};
 export const startJob = (tool_id, params) =>
   api('/api/jobs/start', {
     method: 'POST',
@@ -38,6 +43,8 @@ export const stopJob = (job_id = null) =>
   });
 export const clearJobLogs = (jobId) =>
   api(`/api/jobs/${encodeURIComponent(jobId)}/logs`, { method: 'DELETE' });
+export const clearToolLogs = (toolId) =>
+  api(`/api/tools/${encodeURIComponent(toolId)}/logs`, { method: 'DELETE' });
 export const getConfigSummary = () => api('/api/config/summary');
 export const updateConfig = (config) =>
   api('/api/config', {

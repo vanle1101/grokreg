@@ -8,6 +8,7 @@ const getCurrentJob = api.getCurrentJob;
 const startJob = api.startJob;
 const stopJob = api.stopJob;
 const clearJobLogs = api.clearJobLogs;
+const clearToolLogs = api.clearToolLogs;
 const getConfigSummary = api.getConfigSummary;
 const updateConfig = api.updateConfig;
 const getHealth = api.getHealth;
@@ -414,7 +415,14 @@ async function renderRegister(root) {
     }
   }
 
-  const job = state.job;
+  try {
+    const snap = await getCurrentJob(tool.id, 0);
+    if (snap && snap.status) {
+      state.job = snap;
+    }
+  } catch (_) {}
+
+  const job = state.job && state.job.tool_id === tool.id ? state.job : null;
   const running = job && ['running', 'pending', 'stopping'].includes(job.status);
 
   root.innerHTML = `
@@ -460,19 +468,35 @@ async function renderRegister(root) {
           </div>
 
           <div class="section-label">01 · Chọn nền tảng</div>
-          <div class="tool-grid" style="margin-bottom:19px">
+          <div class="platform-nav" role="tablist" style="margin-bottom:14px">
             ${state.tools
               .map((t) => {
                 const soon = t.status === 'coming_soon';
                 const sel = t.id === tool.id;
-                return `<button type="button" class="tool-tile ${sel ? 'is-selected' : ''} ${soon ? 'is-soon' : ''}" data-tool="${esc(t.id)}" ${soon ? 'disabled' : ''}>
-                  ${brandIconHtml(t)}
-                  <strong>${esc(t.name)}</strong>
-                  <p>${esc(t.description)}</p>
-                  <span class="badge ${soon ? 'badge-soon' : 'badge-ready'}" style="margin-top:8px">${soon ? 'Soon' : 'Ready'}</span>
+                const shortName = (t.name || '').split('/')[0].trim();
+                return `<button type="button" class="platform-tab ${sel ? 'is-active' : ''} ${soon ? 'is-soon' : ''}" data-tool="${esc(t.id)}" ${soon ? 'disabled' : ''} role="tab" aria-selected="${sel}">
+                  <span class="platform-tab-icon">${brandIconHtml(t)}</span>
+                  <span class="platform-tab-name">${esc(shortName)}</span>
+                  <span class="platform-tab-status" title="${soon ? 'Soon' : 'Ready'}"></span>
                 </button>`;
               })
               .join('')}
+          </div>
+
+          <div class="platform-hero">
+            <div class="platform-hero-left">
+              <div class="platform-hero-icon">${brandIconHtml(tool)}</div>
+              <div>
+                <div class="platform-hero-title">
+                  <span>${esc(tool.name)}</span>
+                  <span class="badge badge-ready">Ready</span>
+                </div>
+                <div class="platform-hero-desc">${esc(tool.description)}</div>
+              </div>
+            </div>
+            <div class="platform-hero-right">
+              <span class="tag tag-ok">● Sẵn sàng</span>
+            </div>
           </div>
 
           <div class="section-label">02 · Thông số chạy</div>
@@ -886,16 +910,16 @@ async function copyLogBox(box) {
 
 function bindClearLogButton() {
   document.getElementById('btn-clear-log')?.addEventListener('click', async () => {
-    const jobId = state.job?.id;
-    if (!jobId) {
-      toast('Chưa có log để xoá', 'err');
-      return;
-    }
+    const toolId = state.selectedTool || 'grok';
     try {
-      const result = await clearJobLogs(jobId);
-      state.job = result.job;
+      const result = await clearToolLogs(toolId);
+      state.job = result.job || { status: 'idle', tool_id: toolId, logs: [], running: false };
       paintLogs(document.getElementById('log-box'), []);
-      toast(`Đã xoá ${result.removed || 0} dòng log`, 'ok');
+      const statusLine = document.getElementById('job-status-line');
+      if (statusLine) {
+        statusLine.textContent = `${toolId} · idle`;
+      }
+      toast(`Đã xoá ${result.removed || 0} dòng log của ${toolId}`, 'ok');
     } catch (e) {
       toast(e.message || 'Xoá log thất bại', 'err');
     }
@@ -1192,12 +1216,9 @@ async function route() {
 /* ── Poll job ── */
 async function pollJob() {
   try {
-    const snap = await getCurrentJob(0);
-    if (snap && snap.status && snap.status !== 'idle') {
-      state.job = snap;
-    } else if (snap && snap.running === false && state.job && state.job.running) {
-      state.job = snap;
-    } else if (snap && Array.isArray(snap.logs) && snap.logs.length) {
+    const curTool = state.selectedTool || '';
+    const snap = await getCurrentJob(curTool, 0);
+    if (snap && snap.status) {
       state.job = snap;
     }
     updateRunPill(state.job);
@@ -1207,7 +1228,7 @@ async function pollJob() {
     const statusLine = document.getElementById('job-status-line');
     if (state.job) {
       if (statusLine) {
-        statusLine.textContent = `${state.job.tool_id || ''} · ${state.job.status || ''}${state.job.id ? ' · ' + state.job.id : ''}`;
+        statusLine.textContent = `${state.job.tool_id || curTool} · ${state.job.status || 'idle'}${state.job.id ? ' · ' + state.job.id : ''}`;
       }
       if (box) paintLogs(box, state.job.logs || []);
 

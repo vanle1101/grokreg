@@ -19,7 +19,9 @@ from pathlib import Path
 
 import requests
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 CLASPRC = Path.home() / ".clasprc.json"
 CONFIG = ROOT / "config.json"
 CODE_GS = ROOT / "gsheets_clasp" / "Code.gs"
