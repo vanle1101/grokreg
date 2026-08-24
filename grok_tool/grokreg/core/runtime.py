@@ -4,7 +4,29 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import os
+import shutil
+import tempfile
+import certifi
+
 import grokreg.core.style_log as slog
+
+def ensure_safe_ca_bundle() -> str:
+    """Ensure libcurl / curl_cffi on Windows uses an ASCII safe CA bundle path without non-ASCII accents."""
+    try:
+        tmp = Path(tempfile.gettempdir())
+        safe_ca = tmp / "grok_cacert.pem"
+        src_ca = Path(certifi.where())
+        if not safe_ca.exists() or safe_ca.stat().st_mtime < src_ca.stat().st_mtime:
+            shutil.copyfile(str(src_ca), str(safe_ca))
+        safe_str = str(safe_ca)
+        os.environ["CURL_CA_BUNDLE"] = safe_str
+        os.environ["SSL_CERT_FILE"] = safe_str
+        return safe_str
+    except Exception:
+        return certifi.where()
+
+SAFE_CA_BUNDLE = ensure_safe_ca_bundle()
 
 ROOT = Path(__file__).resolve().parents[2]
 try:

@@ -11,7 +11,7 @@
  */
 
 // Set in Apps Script project settings / Script Properties, or edit locally (do not commit real value)
-var SECRET = PropertiesService.getScriptProperties().getProperty('WEBAPP_SECRET') || 'CHANGE_ME';
+var SECRET = PropertiesService.getScriptProperties().getProperty('WEBAPP_SECRET') || '';
 var DEFAULT_GID = 0;
 var TAB_NAME = 'grok';
 var DEFAULT_PASS = '';
@@ -22,7 +22,7 @@ function doPost(e) {
     if (e && e.postData && e.postData.contents) {
       body = JSON.parse(e.postData.contents);
     }
-    if ((body.secret || '') !== SECRET) {
+    if (SECRET && (body.secret || '') !== SECRET) {
       return jsonOut_({ ok: false, error: 'bad secret' });
     }
     // action=peek | status → đọc sheet (F5 check), không ghi
@@ -45,7 +45,7 @@ function doPost(e) {
 function doGet(e) {
   try {
     var p = (e && e.parameter) || {};
-    if (p.secret === SECRET && (p.action === 'peek' || p.action === 'status')) {
+    if (SECRET && p.secret === SECRET && (p.action === 'peek' || p.action === 'status')) {
       return jsonOut_({ ok: true, result: peekTab_({}) });
     }
   } catch (err) {
@@ -98,14 +98,21 @@ function bannerOf_(tabName, n) {
 function getOrCreateTab_(ss, tabName, gid) {
   var byName = ss.getSheetByName(tabName);
   if (byName) return byName;
-  if (tabName === 'grok' && gid) {
-    var byGid = sheetByGid_(ss, gid);
-    if (byGid) {
-      try { byGid.setName('grok'); } catch (eN) {}
-      return byGid;
+  return ss.insertSheet(tabName);
+}
+
+/** Chạy hàm này để tự động tạo ngay 4 tab: grok, heygen, capcut, zai mà không ảnh hưởng tab cũ */
+function tao_4_tab_tu_dong() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tabs = ['grok', 'heygen', 'capcut', 'zai'];
+  for (var i = 0; i < tabs.length; i++) {
+    var t = tabs[i];
+    var s = getOrCreateTab_(ss, t);
+    if (s.getLastRow() === 0) {
+      writeEmptyLayout_(s, t, {});
     }
   }
-  return ss.insertSheet(tabName);
+  SpreadsheetApp.flush();
 }
 
 function ensureTab_(body) {

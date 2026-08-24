@@ -75,6 +75,13 @@ class HotmailImportBody(BaseModel):
     mode: str = "append"  # append | replace
 
 
+class GenerateKeysRequest(BaseModel):
+    token_amount: int = 10000
+    count: int = 1
+    name_prefix: str = "Grok"
+    group_name: str = "Grok"
+
+
 def resolve_brand_icon(tool_id: str, explicit: str = "") -> str:
     """Official publisher icon. Drop brands/{id}.svg|png|webp — future tools inherit."""
     if explicit:
@@ -290,25 +297,36 @@ def get_config_summary():
     from grokreg.core.config import load_config
 
     cfg = load_config()
+    s2 = cfg.get("sub2api") if isinstance(cfg.get("sub2api"), dict) else {}
+    gs = cfg.get("google_sheets") if isinstance(cfg.get("google_sheets"), dict) else {}
+    has_pass = bool(s2.get("sub2api_pass") or cfg.get("sub2api_password"))
+    has_tok = bool(s2.get("sub2api_api_token") or cfg.get("sub2api_token"))
+    has_web = bool(gs.get("webapp_url") or cfg.get("google_sheets_webapp_url"))
+    fixed_p = bool(cfg.get("fixed_password"))
     return {
         "sub2api": {
-            "enabled": cfg.get("enable_sub2api", True),
-            "mode": cfg.get("sub2api_mode", "auto"),
-            "url": cfg.get("sub2api_url", ""),
-            "group": cfg.get("sub2api_group", "grok free"),
-            "name_prefix": cfg.get("sub2api_name_prefix", "grok free"),
-            "user": cfg.get("sub2api_user", ""),
-            "has_password": bool(cfg.get("sub2api_password")),
-            "has_token": bool(cfg.get("sub2api_token")),
+            "enabled": s2.get("enabled", cfg.get("enable_sub2api", True)),
+            "mode": s2.get("mode", cfg.get("sub2api_mode", "auto")),
+            "url": s2.get("sub2api_url", cfg.get("sub2api_url", "https://grokapi.duckdns.org")),
+            "group": s2.get("group", cfg.get("sub2api_group", "Grok")),
+            "name_prefix": s2.get("name_prefix", cfg.get("sub2api_name_prefix", "grok free")),
+            "user": s2.get("sub2api_user", cfg.get("sub2api_user", "")),
+            "has_password": has_pass,
+            "password_set": has_pass,
+            "has_token": has_tok,
+            "api_token_set": has_tok,
         },
         "google_sheets": {
-            "enabled": cfg.get("enable_google_sheets", False),
-            "spreadsheet_id": cfg.get("google_sheets_spreadsheet_id", ""),
-            "has_webapp": bool(cfg.get("google_sheets_webapp_url")),
+            "enabled": gs.get("enabled", cfg.get("enable_google_sheets", False)),
+            "spreadsheet_id": gs.get("spreadsheet_id", cfg.get("google_sheets_spreadsheet_id", "")),
+            "webapp_url": gs.get("webapp_url", cfg.get("google_sheets_webapp_url", "")),
+            "has_webapp": has_web,
+            "webapp_set": has_web,
         },
         "force_guest_on_start": cfg.get("force_guest_on_start", True),
         "open_grok_after_success": cfg.get("open_grok_after_success", True),
         "fixed_password": cfg.get("fixed_password"),
+        "fixed_password_set": fixed_p,
     }
 
 
@@ -317,28 +335,147 @@ def update_config_api(body: ConfigUpdateBody):
     from grokreg.core.config import load_config, save_config
 
     cfg = load_config()
+    s2 = cfg.setdefault("sub2api", {})
+    s2["enabled"] = body.sub2api.enabled
+    s2["mode"] = body.sub2api.mode
+    s2["sub2api_url"] = body.sub2api.url
+    s2["group"] = body.sub2api.group
+    s2["name_prefix"] = body.sub2api.name_prefix
+    s2["sub2api_user"] = body.sub2api.user
+    if body.sub2api.password:
+        s2["sub2api_pass"] = body.sub2api.password
+    if body.sub2api.api_token:
+        s2["sub2api_api_token"] = body.sub2api.api_token
+
+    gs = cfg.setdefault("google_sheets", {})
+    gs["enabled"] = body.google_sheets.enabled
+    gs["spreadsheet_id"] = body.google_sheets.spreadsheet_id
+    if body.google_sheets.webapp_url:
+        gs["webapp_url"] = body.google_sheets.webapp_url
+
     cfg["enable_sub2api"] = body.sub2api.enabled
-    cfg["sub2api_mode"] = body.sub2api.mode
-    cfg["sub2api_url"] = body.sub2api.url
-    cfg["sub2api_group"] = body.sub2api.group
-    cfg["sub2api_name_prefix"] = body.sub2api.name_prefix
-    cfg["sub2api_user"] = body.sub2api.user
-    if body.sub2api.password is not None:
-        cfg["sub2api_password"] = body.sub2api.password
-    if body.sub2api.api_token is not None:
-        cfg["sub2api_token"] = body.sub2api.api_token
-
     cfg["enable_google_sheets"] = body.google_sheets.enabled
-    cfg["google_sheets_spreadsheet_id"] = body.google_sheets.spreadsheet_id
-    if body.google_sheets.webapp_url is not None:
-        cfg["google_sheets_webapp_url"] = body.google_sheets.webapp_url
-
     cfg["force_guest_on_start"] = body.force_guest_on_start
     cfg["open_grok_after_success"] = body.open_grok_after_success
-    cfg["fixed_password"] = body.fixed_password
+    if body.fixed_password:
+        cfg["fixed_password"] = body.fixed_password
 
     save_config(cfg)
-    return {"ok": True, "message": "Đã lưu cấu hình"}
+    return {"ok": True, "message": "Đã lưu thiết lập thành công"}
+
+
+@app.post("/api/sub2api/keys/generate")
+def generate_sub2api_keys(req: GenerateKeysRequest):
+    import requests
+    from grokreg.core.config import load_config
+
+    cfg = load_config()
+    s2 = cfg.get("sub2api") if isinstance(cfg.get("sub2api"), dict) else {}
+    base_url = (s2.get("sub2api_url") or cfg.get("sub2api_url") or "https://grokapi.duckdns.org").rstrip("/")
+    user = s2.get("sub2api_user") or cfg.get("sub2api_user")
+    pwd = s2.get("sub2api_pass") or cfg.get("sub2api_password")
+
+    if not user or not pwd:
+        raise HTTPException(status_code=400, detail="Chưa cấu hình Sub2API User / Password trong Settings!")
+
+    # 1. Login
+    try:
+        r = requests.post(f"{base_url}/api/v1/auth/login", json={"email": user, "password": pwd}, timeout=10)
+        login_data = r.json()
+        if login_data.get("code") != 0:
+            raise Exception(login_data.get("message") or "Đăng nhập Sub2API thất bại")
+        auth_token = login_data["data"]["access_token"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi đăng nhập Sub2API: {e}")
+
+    headers = {"Authorization": f"Bearer {auth_token}"}
+
+    # 2. Resolve group ID
+    target_group = req.group_name or s2.get("group") or "Grok"
+    group_id = 34  # default Grok group
+    try:
+        gr = requests.get(f"{base_url}/api/v1/admin/groups", headers=headers, timeout=10)
+        if gr.status_code == 200:
+            items = gr.json().get("data", {}).get("items", [])
+            for g in items:
+                if g.get("name", "").strip().lower() == target_group.strip().lower():
+                    group_id = g["id"]
+                    break
+    except Exception:
+        pass
+
+    # 3. Calculate quota (1 USD = 500,000 tokens => quota = tokens / 500000.0)
+    quota_usd = round(req.token_amount / 500000.0, 6)
+    created_keys = []
+    errors = []
+
+    count = max(1, min(100, req.count))
+    token_display = f"{req.token_amount // 1000}k" if req.token_amount >= 1000 else str(req.token_amount)
+
+    for i in range(1, count + 1):
+        suffix = f"_{i:02d}" if count > 1 else ""
+        key_name = f"{req.name_prefix}_{token_display}{suffix}".strip()
+        payload = {
+            "name": key_name,
+            "group_id": group_id,
+            "quota": quota_usd,
+            "expires_in_days": None,
+        }
+        try:
+            kr = requests.post(f"{base_url}/api/v1/keys", headers=headers, json=payload, timeout=10)
+            kd = kr.json()
+            if kd.get("code") == 0:
+                k_data = kd["data"]
+                created_keys.append({
+                    "id": k_data.get("id"),
+                    "name": k_data.get("name"),
+                    "key": k_data.get("key"),
+                    "tokens": req.token_amount,
+                    "tokens_display": token_display,
+                    "quota_usd": quota_usd,
+                    "group": target_group,
+                    "created_at": k_data.get("created_at"),
+                })
+            else:
+                errors.append(f"Tạo key #{i} lỗi: {kd.get('message')}")
+        except Exception as e:
+            errors.append(f"Tạo key #{i} lỗi kết nối: {e}")
+
+    return {
+        "ok": len(created_keys) > 0,
+        "base_url": f"{base_url}/v1",
+        "keys": created_keys,
+        "errors": errors,
+        "count": len(created_keys),
+        "token_amount": req.token_amount,
+    }
+
+
+@app.get("/api/sub2api/keys/list")
+def list_sub2api_keys(page: int = 1, page_size: int = 50):
+    import requests
+    from grokreg.core.config import load_config
+
+    cfg = load_config()
+    s2 = cfg.get("sub2api") if isinstance(cfg.get("sub2api"), dict) else {}
+    base_url = (s2.get("sub2api_url") or cfg.get("sub2api_url") or "https://grokapi.duckdns.org").rstrip("/")
+    user = s2.get("sub2api_user") or cfg.get("sub2api_user")
+    pwd = s2.get("sub2api_pass") or cfg.get("sub2api_password")
+
+    if not user or not pwd:
+        return {"items": [], "total": 0}
+
+    try:
+        r = requests.post(f"{base_url}/api/v1/auth/login", json={"email": user, "password": pwd}, timeout=10)
+        auth_token = r.json().get("data", {}).get("access_token")
+        if not auth_token:
+            return {"items": [], "total": 0}
+        headers = {"Authorization": f"Bearer {auth_token}"}
+        kr = requests.get(f"{base_url}/api/v1/keys?page={page}&page_size={page_size}", headers=headers, timeout=10)
+        data = kr.json().get("data", {})
+        return data
+    except Exception:
+        return {"items": [], "total": 0}
 
 
 def main():

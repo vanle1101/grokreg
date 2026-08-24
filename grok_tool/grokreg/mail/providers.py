@@ -164,6 +164,7 @@ class AzpopMailProvider:
         self.preferred_domains = [str(d).strip().lower() for d in pref if str(d).strip()]
         self.poll_interval = float(cfg.get("poll_interval") or 3)
         self._http = requests.Session()
+        self._http.trust_env = False
         self._http.verify = self.verify_ssl
         if not self.verify_ssl:
             try:
@@ -190,7 +191,7 @@ class AzpopMailProvider:
         return data
 
     def list_domains(self) -> list[str]:
-        r = self._http.get(f"{self.base}/api/domain_list", timeout=20)
+        r = self._http.get(f"{self.base}/api/domain_list", timeout=20, verify=self.verify_ssl)
         r.raise_for_status()
         payload = r.json()
         raw = []
@@ -259,6 +260,7 @@ class AzpopMailProvider:
             f"{self.base}/messages",
             data=data,
             timeout=20,
+            verify=self.verify_ssl,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         r.raise_for_status()
@@ -289,6 +291,7 @@ class AzpopMailProvider:
             f"{self.base}/messages",
             data=self._form(username, domain, id=str(msg_id)),
             timeout=20,
+            verify=self.verify_ssl,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         r.raise_for_status()

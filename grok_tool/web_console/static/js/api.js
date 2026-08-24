@@ -58,3 +58,11 @@ export const importHotmails = (id, text, mode = 'append') =>
     method: 'POST',
     body: JSON.stringify({ text, mode }),
   });
+export const generateSub2apiKeys = (params) =>
+  api('/api/sub2api/keys/generate', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+export const listSub2apiKeys = (page = 1, pageSize = 50) =>
+  api(`/api/sub2api/keys/list?page=${page}&page_size=${pageSize}`);
+

@@ -254,3 +254,6 @@ def load_config() -> dict[str, Any]:
     return cfg
 
 
+def save_config(cfg: dict[str, Any]) -> None:
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)

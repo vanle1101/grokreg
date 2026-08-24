@@ -453,15 +453,27 @@
     >
       <form id="key-form" @submit.prevent="handleSubmit" class="space-y-5">
         <div>
-          <label class="input-label">{{ t('keys.nameLabel') }}</label>
+          <label class="input-label">{{ t('keys.nameLabel') }} (Tùy chọn)</label>
           <input
             v-model="formData.name"
             type="text"
-            required
             class="input"
-            :placeholder="t('keys.namePlaceholder')"
+            placeholder="Để trống sẽ tự đặt: Grok_10k_01..."
             data-tour="key-form-name"
           />
+        </div>
+
+        <div v-if="!showEditModal">
+          <label class="input-label">Số lượng Key muốn tạo (Batch)</label>
+          <input
+            v-model.number="formData.batch_count"
+            type="number"
+            min="1"
+            max="100"
+            class="input"
+            placeholder="1"
+          />
+          <p class="input-hint">Tạo nhanh từ 1 đến 100 key cùng lúc</p>
         </div>
 
         <div>
@@ -597,42 +609,49 @@
 
         <!-- Quota Limit Section -->
         <div class="space-y-3">
-          <label class="input-label">{{ t('keys.quotaLimit') }}</label>
-          <!-- Switch commented out - always show input, 0 = unlimited
-          <div class="flex items-center justify-between">
-            <label class="input-label mb-0">{{ t('keys.quotaLimit') }}</label>
-            <button
-              type="button"
-              @click="formData.enable_quota = !formData.enable_quota"
-              :class="[
-                'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-                formData.enable_quota ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-              ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                  formData.enable_quota ? 'translate-x-4' : 'translate-x-0'
+          <label class="input-label">Gói Token / Quota Limit</label>
+          <div class="space-y-3">
+            <!-- Preset token chips -->
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="pkg in [
+                  { label: '10k Token', tokens: 10000 },
+                  { label: '20k Token', tokens: 20000 },
+                  { label: '50k Token', tokens: 50000 },
+                  { label: '100k Token', tokens: 100000 },
+                  { label: '500k Token', tokens: 500000 },
+                  { label: '1M Token', tokens: 1000000 },
                 ]"
-              />
-            </button>
-          </div>
-          -->
+                :key="pkg.tokens"
+                type="button"
+                @click="setTokenPreset(pkg.tokens)"
+                :class="[
+                  'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                  formData.token_amount === pkg.tokens
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-dark-700 dark:text-gray-300'
+                ]"
+              >
+                {{ pkg.label }}
+              </button>
+            </div>
 
-          <div class="space-y-4">
             <div>
+              <label class="input-label text-xs">Số Token quy đổi (0 = Không giới hạn)</label>
               <div class="relative">
-                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
                 <input
-                  v-model.number="formData.quota"
+                  v-model.number="formData.token_amount"
+                  @input="onTokenInput"
                   type="number"
-                  step="0.01"
+                  step="1000"
                   min="0"
-                  class="input pl-7"
-                  :placeholder="t('keys.quotaAmountPlaceholder')"
+                  class="input"
+                  placeholder="10000"
                 />
               </div>
-              <p class="input-hint">{{ t('keys.quotaAmountHint') }}</p>
+              <p class="input-hint">
+                Tương đương: <strong>${{ (formData.quota || 0).toFixed(4) }} USD</strong> (Quy đổi: 10k token = $0.02, 100k token = $0.20)
+              </p>
             </div>
 
             <!-- Quota used display (only in edit mode) -->
@@ -1329,6 +1348,7 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
 
 const formData = ref({
   name: '',
+  batch_count: 1,
   group_id: null as number | null,
   status: 'active' as 'active' | 'inactive',
   use_custom_key: false,
@@ -1336,9 +1356,10 @@ const formData = ref({
   enable_ip_restriction: false,
   ip_whitelist: '',
   ip_blacklist: '',
-  // Quota settings (empty = unlimited)
+  // Token & Quota settings (empty/0 = unlimited)
+  token_amount: 10000 as number | null,
   enable_quota: false,
-  quota: null as number | null,
+  quota: 0.02 as number | null,
   // Rate limit settings
   enable_rate_limit: false,
   rate_limit_5h: null as number | null,
@@ -1348,6 +1369,16 @@ const formData = ref({
   expiration_preset: '30' as '7' | '30' | '90' | 'custom',
   expiration_date: ''
 })
+
+const setTokenPreset = (tokens: number) => {
+  formData.value.token_amount = tokens
+  formData.value.quota = tokens > 0 ? Number((tokens / 500000.0).toFixed(6)) : 0
+}
+
+const onTokenInput = () => {
+  const tokens = formData.value.token_amount || 0
+  formData.value.quota = tokens > 0 ? Number((tokens / 500000.0).toFixed(6)) : 0
+}
 
 // 自定义Key验证
 const customKeyError = computed(() => {
@@ -1736,17 +1767,24 @@ const handleSubmit = async () => {
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
     } else {
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
-      await keysAPI.create(
-        formData.value.name,
-        formData.value.group_id,
-        customKey,
-        ipWhitelist,
-        ipBlacklist,
-        quota,
-        expiresInDays,
-        rateLimitData
-      )
-      appStore.showSuccess(t('keys.keyCreatedSuccess'))
+      const count = Math.max(1, Math.min(100, Number(formData.value.batch_count || 1)))
+      const tokenDisplay = formData.value.token_amount ? (formData.value.token_amount >= 1000 ? `${formData.value.token_amount / 1000}k` : `${formData.value.token_amount}`) : 'unlimited'
+      const baseName = formData.value.name.trim() || `Grok_${tokenDisplay}`
+
+      for (let i = 1; i <= count; i++) {
+        const keyName = count > 1 ? `${baseName}_${String(i).padStart(2, '0')}` : baseName
+        await keysAPI.create(
+          keyName,
+          formData.value.group_id,
+          count === 1 ? customKey : undefined,
+          ipWhitelist,
+          ipBlacklist,
+          quota,
+          expiresInDays,
+          rateLimitData
+        )
+      }
+      appStore.showSuccess(count > 1 ? `Đã tạo thành công ${count} API Key!` : t('keys.keyCreatedSuccess'))
       // Only advance tour if active, on submit step, and creation succeeded
       if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
         onboardingStore.nextStep(500)

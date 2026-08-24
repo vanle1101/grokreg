@@ -160,11 +160,11 @@ def process_queue_once(
         name = str(rec.get("name") or "")
         attempts = int(rec.get("attempts") or 0) + 1
 
-        # merge live config + snapshot
+        # merge snapshot + live config (live config takes precedence)
         sub_cfg: dict[str, Any] = {}
+        sub_cfg.update(dict(rec.get("sub_cfg_snapshot") or {}))
         if config:
             sub_cfg.update(dict(config.get("sub2api") or {}))
-        sub_cfg.update(dict(rec.get("sub_cfg_snapshot") or {}))
         if rec.get("group"):
             sub_cfg.setdefault("group", rec["group"])
 

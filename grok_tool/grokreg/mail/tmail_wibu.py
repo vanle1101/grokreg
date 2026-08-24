@@ -120,6 +120,7 @@ class TmailWibuProvider:
         self.mode = str(cfg.get("create_mode") or "create").lower()  # create | random
         self._last_csrf: str = ""
         self._http = requests.Session()
+        self._http.trust_env = False
         self._http.verify = self.verify_ssl
         if not self.verify_ssl:
             try:

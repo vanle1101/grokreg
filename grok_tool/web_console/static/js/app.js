@@ -23,10 +23,14 @@ const importHotmails =
         throw new Error('API Hotmail chưa sẵn sàng — restart web server');
       };
 
+const generateSub2apiKeys = api.generateSub2apiKeys;
+const listSub2apiKeys = api.listSub2apiKeys;
+
 const PAGE_META = {
   '#/register': { title: 'Bảng điều khiển', eyebrow: 'Thiết lập và theo dõi các phiên đăng ký.' },
   '#/results': { title: 'Kho tài khoản', eyebrow: 'Quản lý tài khoản và trạng thái xử lý.' },
   '#/logs': { title: 'Dòng sự kiện', eyebrow: 'Theo dõi tiến trình và lỗi theo thời gian thực.' },
+  '#/keys': { title: 'Tạo Key API Bán Lẻ', eyebrow: 'Tạo nhanh API Key theo gói Token không giới hạn ngày.' },
   '#/settings': { title: 'Thiết lập', eyebrow: 'Quản lý kết nối và hành vi mặc định của hệ thống.' },
   '#/tools': { title: 'Hệ sinh thái', eyebrow: 'Danh sách nền tảng đang kết nối với Nexus Ops.' },
 };
@@ -166,8 +170,8 @@ function progressContent(job) {
   const countText = p.continuous
     ? `${p.completed} tài khoản đã xử lý · chạy liên tục`
     : `${p.completed} / ${p.total} tài khoản`;
-  const percentText = p.continuous ? 'LIVE' : `${p.percent}%`;
-  const width = p.continuous ? 32 : p.percent;
+  const percentText = p.continuous ? '<span class="progress-live-pill">LIVE</span>' : `${p.percent}%`;
+  const width = p.continuous ? 35 : p.percent;
   return `
     <div class="progress-meta">
       <strong>${countText}</strong>
@@ -183,6 +187,28 @@ function progressContent(job) {
       <span class="progress-fail">${p.failed} thất bại</span>
       <span class="progress-elapsed">${job.ended_at ? 'Tổng thời gian' : 'Đã chạy'} <strong>${formatElapsed(job)}</strong></span>
     </div>`;
+}
+
+function formatStatusLine(job) {
+  if (!job) return '<span class="status-pill status-idle"><i class="status-pulse-dot"></i> Đang chờ phiên chạy mới</span>';
+  const status = (job.status || 'idle').toLowerCase();
+  const tool = esc(job.tool_id || 'grok');
+  let label = status.toUpperCase();
+  let cls = 'idle';
+  if (status === 'running' || status === 'pending') {
+    label = 'ĐANG CHẠY';
+    cls = 'running';
+  } else if (status === 'done' || status === 'finished' || status === 'completed') {
+    label = 'HOÀN THÀNH';
+    cls = 'done';
+  } else if (status === 'error' || status === 'failed') {
+    label = 'LỖI';
+    cls = 'error';
+  } else if (status === 'stopping') {
+    label = 'ĐANG DỪNG';
+    cls = 'warn';
+  }
+  return `<span class="status-pill status-${cls}"><i class="status-pulse-dot"></i> <strong>${tool}</strong> · ${label}</span>`;
 }
 
 function updateJobProgress(job) {
@@ -567,7 +593,7 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
               <span class="term-dots" aria-hidden="true"><i></i><i></i><i></i></span>
               <div>
               <div class="card-title">Live activity</div>
-              <div class="card-sub" id="job-status-line">${job ? `${esc(job.tool_id)} · ${esc(job.status)}` : 'Đang chờ phiên chạy mới'}</div>
+              <div class="card-sub" id="job-status-line">${formatStatusLine(job)}</div>
               </div>
             </div>
             <div class="log-actions">
@@ -900,14 +926,6 @@ function bindLogBox(box) {
     { passive: true },
   );
 }
-
-async function copyLogBox(box) {
-  const text = logBoxText(box);
-  await copyToClipboard(text);
-  const n = text ? text.split('\n').length : 0;
-  toast(n ? `Đã copy ${n} dòng log` : 'Log trống', n ? 'ok' : 'err');
-}
-
 function bindClearLogButton() {
   document.getElementById('btn-clear-log')?.addEventListener('click', async () => {
     const toolId = state.selectedTool || 'grok';
@@ -917,7 +935,7 @@ function bindClearLogButton() {
       paintLogs(document.getElementById('log-box'), []);
       const statusLine = document.getElementById('job-status-line');
       if (statusLine) {
-        statusLine.textContent = `${toolId} · idle`;
+        statusLine.innerHTML = formatStatusLine({ tool_id: toolId, status: 'idle' });
       }
       toast(`Đã xoá ${result.removed || 0} dòng log của ${toolId}`, 'ok');
     } catch (e) {
@@ -935,8 +953,7 @@ async function renderResults(root) {
     rows = r.results || [];
     stats = await getToolStats(toolId);
   } catch (e) {
-    root.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
-    return;
+    /* ignore fetch error */
   }
 
   root.innerHTML = `
@@ -1087,8 +1104,8 @@ async function renderSettings(root) {
               <div class="field"><label>Group</label><input id="cfg-sub-group" type="text" value="${esc(sub.group)}"></div>
               <div class="field"><label>Name prefix</label><input id="cfg-sub-prefix" type="text" value="${esc(sub.name_prefix)}"></div>
               <div class="field span-2"><label>User</label><input id="cfg-sub-user" type="text" value="${esc(sub.user)}" autocomplete="username"></div>
-              <div class="field"><label>Password</label><input id="cfg-sub-pass" type="password" value="" autocomplete="new-password" placeholder="${sub.password_set ? 'Đã cấu hình · để trống để giữ nguyên' : 'Chưa cấu hình'}"></div>
-              <div class="field"><label>API token</label><input id="cfg-sub-token" type="password" value="" autocomplete="off" placeholder="${sub.api_token_set ? 'Đã cấu hình · để trống để giữ nguyên' : 'Chưa cấu hình'}"></div>
+              <div class="field"><label>Password</label><input id="cfg-sub-pass" type="password" value="" autocomplete="new-password" placeholder="${sub.password_set || sub.has_password ? '••••••••  (Đã cấu hình · nhập mới để đổi)' : 'Chưa cấu hình'}"></div>
+              <div class="field"><label>API token</label><input id="cfg-sub-token" type="password" value="" autocomplete="off" placeholder="${sub.api_token_set || sub.has_token ? '••••••••  (Đã cấu hình · nhập mới để đổi)' : 'Chưa cấu hình'}"></div>
             </div>
           </section>
 
@@ -1099,8 +1116,8 @@ async function renderSettings(root) {
             </div>
             <div class="form-stack">
               <div class="field"><label>Spreadsheet ID</label><input id="cfg-sheet-id" type="text" value="${esc(gs.spreadsheet_id)}" placeholder="1Abc..."></div>
-              <div class="field"><label>Webapp URL</label><input id="cfg-sheet-webapp" type="password" value="" autocomplete="off" placeholder="${gs.webapp_set ? 'Đã cấu hình · để trống để giữ nguyên' : 'Chưa cấu hình'}"></div>
-              <div class="settings-note">Thông tin nhạy cảm không được tải ngược ra trình duyệt. Nhập giá trị mới chỉ khi muốn thay đổi.</div>
+              <div class="field"><label>Webapp URL</label><input id="cfg-sheet-webapp" type="text" value="${esc(gs.webapp_url || '')}" autocomplete="off" placeholder="https://script.google.com/macros/s/.../exec"></div>
+              <div class="settings-note">Thông tin kết nối Google Sheets tự động đồng bộ thời gian thực mỗi tài khoản reg xong.</div>
             </div>
           </section>
         </div>
@@ -1110,7 +1127,7 @@ async function renderSettings(root) {
           <div class="settings-options">
             <label class="check-row"><input id="cfg-force-guest" type="checkbox" ${sum.force_guest_on_start ? 'checked' : ''}><span>Force guest khi bắt đầu</span></label>
             <label class="check-row"><input id="cfg-open-grok" type="checkbox" ${sum.open_grok_after_success ? 'checked' : ''}><span>Mở Grok sau khi thành công</span></label>
-            <div class="field"><label>Fixed password</label><input id="cfg-fixed-pass" type="password" value="" autocomplete="new-password" placeholder="${sum.fixed_password_set ? 'Đã cấu hình · để trống để giữ nguyên' : 'Chưa cấu hình'}"></div>
+            <div class="field"><label>Fixed password</label><input id="cfg-fixed-pass" type="password" value="" autocomplete="new-password" placeholder="${sum.fixed_password_set ? '••••••••  (Đã cấu hình · nhập mới để đổi)' : 'Chưa cấu hình'}"></div>
           </div>
         </section>
 
@@ -1193,6 +1210,205 @@ async function renderTools(root) {
   `;
 }
 
+async function renderKeys(root) {
+  let recent = [];
+  try {
+    const res = await listSub2apiKeys(1, 30);
+    recent = res.items || [];
+  } catch (_) {}
+
+  const packages = [
+    { label: '10,000 Token (10k)', tokens: 10000 },
+    { label: '20,000 Token (20k)', tokens: 20000 },
+    { label: '50,000 Token (50k)', tokens: 50000 },
+    { label: '100,000 Token (100k)', tokens: 100000 },
+    { label: '500,000 Token (500k)', tokens: 500000 },
+    { label: '1,000,000 Token (1M)', tokens: 1000000 },
+  ];
+
+  let selectedTokens = 10000;
+
+  root.innerHTML = `
+    <div class="page">
+      <div class="page-banner">
+        <div><div class="hero-kicker"><i></i> API Key Dispatcher</div><h2>🔑 Tạo Key API Bán Lẻ Cho Khách</h2><p>Tạo nhanh API Key Grok theo số lượng Token mong muốn. Key không bao giờ hết hạn ngày, dùng hết token tự dừng.</p></div>
+        <span class="page-banner-mark">RETAIL KEYS</span>
+      </div>
+
+      <div class="workspace">
+        <div class="card control-card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Tạo Key Bán Lẻ Mới</div>
+              <div class="card-sub">Chọn gói token và số lượng key cần tạo.</div>
+            </div>
+            <span class="badge badge-ready">Grok (143+ Acc)</span>
+          </div>
+
+          <div class="section-label">01 · Chọn gói Token</div>
+          <div class="token-presets" id="token-preset-group">
+            ${packages.map((p, idx) => `<button type="button" class="token-chip ${idx === 0 ? 'is-selected' : ''}" data-tokens="${p.tokens}">${p.label}</button>`).join('')}
+          </div>
+
+          <div class="form-stack form-grid">
+            <div class="field">
+              <label>Số Token của mỗi Key</label>
+              <input type="number" id="key-tokens" value="${selectedTokens}" min="1000" step="1000" />
+              <div class="hint">Quy đổi: 10,000 token = $0.02 | 100,000 token = $0.20</div>
+            </div>
+
+            <div class="field">
+              <label>Số lượng Key muốn tạo</label>
+              <input type="number" id="key-count" value="1" min="1" max="100" />
+              <div class="hint">Tạo hàng loạt từ 1 đến 100 key trong 1 giây</div>
+            </div>
+
+            <div class="field">
+              <label>Tên / Tiền tố Key (Tùy chọn)</label>
+              <input type="text" id="key-prefix" value="Grok" placeholder="VD: KhachA, Grok, Shop..." />
+              <div class="hint">Hệ thống sẽ tự đặt tên: Grok_10k_01, Grok_10k_02...</div>
+            </div>
+
+            <div class="field">
+              <label>Hạn sử dụng</label>
+              <input type="text" value="♾️ Không bao giờ hết hạn (Dùng hết Token thì thôi)" disabled style="opacity:0.8;background:var(--subtle)" />
+              <div class="hint">Khách dùng khi nào hết sạch token thì tự khóa</div>
+            </div>
+          </div>
+
+          <div class="btn-row action-row">
+            <button class="btn btn-primary" id="btn-generate-keys" type="button" style="padding:10px 20px;font-size:13px">⚡ Tạo Key Ngay</button>
+          </div>
+
+          <div id="key-result-container" hidden></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">Mẫu gửi cho khách hàng</div>
+              <div class="card-sub">Copy mẫu này gửi kèm Key cho khách</div>
+            </div>
+          </div>
+          <div style="background:var(--subtle);padding:14px;border-radius:9px;font-size:12px;line-height:1.6;border:1px solid var(--border)">
+            <div style="font-weight:600;margin-bottom:6px;color:var(--primary)">📌 Thông tin kết nối Grok API:</div>
+            <div>🌐 <b>Base URL:</b> <code>https://grokapi.duckdns.org/v1</code></div>
+            <div>🔑 <b>API Key:</b> <code>sk-sub2api-...</code></div>
+            <div>🤖 <b>Model hỗ trợ:</b> <code>grok-2</code>, <code>grok-2-mini</code>, <code>grok-beta</code></div>
+            <div>⚡ <b>Chuẩn kết nối:</b> Tương thích 100% OpenAI Format (Chat/NextChat/Claude/Cursor/Dify...)</div>
+          </div>
+
+          <div class="card-head" style="margin-top:24px">
+            <div>
+              <div class="card-title">Lịch sử Key gần đây (${recent.length})</div>
+              <div class="card-sub">Trạng thái số dư của các key đã tạo</div>
+            </div>
+            <button class="btn btn-ghost" id="btn-refresh-keys" type="button">Làm mới</button>
+          </div>
+          <div class="table-wrap" style="max-height:350px">
+            <table class="results">
+              <thead>
+                <tr><th>Tên Key</th><th>API Key</th><th>Số dư đã dùng</th><th>Trạng thái</th></tr>
+              </thead>
+              <tbody>
+                ${recent.length ? recent.map((k) => {
+                  const used = Number(k.quota_used || 0);
+                  const max = Number(k.quota || 0);
+                  const usedTokens = Math.round(used * 500000);
+                  const maxTokens = Math.round(max * 500000);
+                  return `<tr>
+                    <td><strong>${esc(k.name || 'Key')}</strong></td>
+                    <td><code>${esc(k.key ? k.key.slice(0, 14) + '...' + k.key.slice(-6) : '—')}</code></td>
+                    <td style="font-size:11px">${maxTokens > 0 ? `${usedTokens.toLocaleString()} / ${maxTokens.toLocaleString()} tokens` : 'Không giới hạn'}</td>
+                    <td><span class="tag tag-${k.status === 'active' ? 'ok' : 'fail'}">${esc(k.status || 'active')}</span></td>
+                  </tr>`;
+                }).join('') : '<tr><td colspan="4" class="empty">Chưa có key nào</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Handle Preset Click
+  root.querySelectorAll('.token-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      root.querySelectorAll('.token-chip').forEach((c) => c.classList.remove('is-selected'));
+      btn.classList.add('is-selected');
+      const tokens = Number(btn.dataset.tokens);
+      const input = root.querySelector('#key-tokens');
+      if (input) input.value = tokens;
+    });
+  });
+
+  root.querySelector('#btn-refresh-keys')?.addEventListener('click', () => renderKeys(root));
+
+  // Handle Generate Click
+  root.querySelector('#btn-generate-keys')?.addEventListener('click', async () => {
+    const btn = root.querySelector('#btn-generate-keys');
+    const tokens = Math.max(1000, Number(root.querySelector('#key-tokens')?.value || 10000));
+    const count = Math.max(1, Math.min(100, Number(root.querySelector('#key-count')?.value || 1)));
+    const prefix = root.querySelector('#key-prefix')?.value || 'Grok';
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Đang tạo key trên Sub2API...';
+    try {
+      const res = await generateSub2apiKeys({
+        token_amount: tokens,
+        count: count,
+        name_prefix: prefix,
+        group_name: 'Grok',
+      });
+
+      if (!res.ok || !res.keys?.length) {
+        throw new Error((res.errors || []).join('; ') || 'Không tạo được key nào!');
+      }
+
+      toast(`Đã tạo thành công ${res.keys.length} Key (${tokens.toLocaleString()} tokens)!`, 'ok');
+
+      const container = root.querySelector('#key-result-container');
+      const allKeyTexts = res.keys.map((k) => k.key).join('\n');
+      const allFormatTexts = res.keys.map((k, i) => `[Key #${i + 1} - ${k.name}]\nBase URL: ${res.base_url}\nAPI Key: ${k.key}\nSố dư: ${tokens.toLocaleString()} Tokens\nModel: grok-2`).join('\n\n---\n\n');
+
+      container.hidden = false;
+      container.innerHTML = `
+        <div class="key-gen-result">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <strong style="color:var(--success);font-size:13px">✅ Đã tạo thành công ${res.keys.length} Key:</strong>
+            <div class="btn-row" style="margin:0">
+              <button class="btn btn-primary" id="btn-copy-all-keys" type="button">📋 Copy tất cả Key</button>
+              <button class="btn btn-ghost" id="btn-export-key-file" type="button">📥 Tải file TXT</button>
+            </div>
+          </div>
+          <textarea readonly id="key-text-output">${esc(allKeyTexts)}</textarea>
+          <div style="margin-top:8px;font-size:11px;color:var(--muted)">Đã tự động liên kết với dàn 143+ Acc Grok, không bao giờ hết hạn ngày, tự động trừ đúng ${tokens.toLocaleString()} token.</div>
+        </div>
+      `;
+
+      container.querySelector('#btn-copy-all-keys')?.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(allKeyTexts);
+          toast(`Đã copy ${res.keys.length} Key vào clipboard!`, 'ok');
+        } catch {
+          toast('Copy thất bại', 'err');
+        }
+      });
+
+      container.querySelector('#btn-export-key-file')?.addEventListener('click', () => {
+        downloadFile(`grok_keys_${tokens}_${Date.now()}.txt`, allFormatTexts);
+      });
+    } catch (e) {
+      toast(`Lỗi tạo key: ${e.message}`, 'err');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '⚡ Tạo Key Ngay';
+      }
+    }
+  });
+}
+
 /* ── Router ── */
 async function route() {
   const hash = location.hash || '#/register';
@@ -1206,6 +1422,7 @@ async function route() {
     if (known === '#/register') await renderRegister(main);
     else if (known === '#/results') await renderResults(main);
     else if (known === '#/logs') await renderLogs(main);
+    else if (known === '#/keys') await renderKeys(main);
     else if (known === '#/settings') await renderSettings(main);
     else if (known === '#/tools') await renderTools(main);
   } catch (e) {
@@ -1228,7 +1445,7 @@ async function pollJob() {
     const statusLine = document.getElementById('job-status-line');
     if (state.job) {
       if (statusLine) {
-        statusLine.textContent = `${state.job.tool_id || curTool} · ${state.job.status || 'idle'}${state.job.id ? ' · ' + state.job.id : ''}`;
+        statusLine.innerHTML = formatStatusLine(state.job);
       }
       if (box) paintLogs(box, state.job.logs || []);
 

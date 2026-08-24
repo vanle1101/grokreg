@@ -185,6 +185,11 @@ def build_protocol_session(
         session = requests.Session()
 
     session.headers.update(headers)
+    try:
+        from grokreg.core.runtime import SAFE_CA_BUNDLE
+        session.verify = SAFE_CA_BUNDLE
+    except Exception:
+        pass
     # Stamp the chosen profile so workers/tests can inspect it.
     try:
         session._protocol_impersonate = chosen_profile  # type: ignore[attr-defined]
