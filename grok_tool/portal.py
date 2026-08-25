@@ -425,6 +425,33 @@ $authJson = @"
 Set-Content -Path (Join-Path $codexDir "auth.json") -Value $authJson -Encoding UTF8
 Write-Host "[OK] Da tu dong cau hinh file ~/.codex/config.toml cho Codex Desktop App!" -ForegroundColor Green
 
+# Configure Grok Build CLI (~/.grok)
+$grokDir = Join-Path $env:USERPROFILE ".grok"
+if (-not (Test-Path $grokDir)) {{
+    New-Item -ItemType Directory -Path $grokDir -Force | Out-Null
+}}
+
+$grokConfigToml = @"
+[models]
+default = "grok-4.6"
+
+[model.grok-4.6]
+model = "$defaultModel"
+base_url = "$baseUrl"
+name = "Grok 4.6 Flagship"
+env_key = "XAI_API_KEY"
+
+[model.grok-2]
+model = "grok-2"
+base_url = "$baseUrl"
+name = "Grok 2 Flash"
+env_key = "XAI_API_KEY"
+"@
+
+Set-Content -Path (Join-Path $grokDir "config.toml") -Value $grokConfigToml -Encoding UTF8
+Set-Content -Path (Join-Path $grokDir "auth.json") -Value $authJson -Encoding UTF8
+Write-Host "[OK] Da tu dong cau hinh ~/.grok/config.toml cho Grok Build CLI!" -ForegroundColor Green
+
 $desktop = [Environment]::GetFolderPath("Desktop")
 $batPath = "$desktop\\Chat_Grok.bat"
 
@@ -548,6 +575,36 @@ cat <<EOF > "$CODEX_DIR/auth.json"
 EOF
 
 echo -e "\\033[1;32m[OK] Da tu dong cau hinh ~/.codex/config.toml cho Codex Desktop App!\\033[0m"
+
+# Configure Grok Build CLI (~/.grok)
+GROK_DIR="$HOME/.grok"
+mkdir -p "$GROK_DIR"
+
+cat <<EOF > "$GROK_DIR/config.toml"
+[models]
+default = "grok-4.6"
+
+[model.grok-4.6]
+model = "$DEFAULT_MODEL"
+base_url = "$BASE_URL"
+name = "Grok 4.6 Flagship"
+env_key = "XAI_API_KEY"
+
+[model.grok-2]
+model = "grok-2"
+base_url = "$BASE_URL"
+name = "Grok 2 Flash"
+env_key = "XAI_API_KEY"
+EOF
+
+cat <<EOF > "$GROK_DIR/auth.json"
+{{
+  "OPENAI_API_KEY": "$API_KEY",
+  "XAI_API_KEY": "$API_KEY",
+  "api_key": "$API_KEY"
+}}
+EOF
+echo -e "\\033[1;32m[OK] Da tu dong cau hinh ~/.grok/config.toml cho Grok Build CLI!\\033[0m"
 
 # 3. Create quick real-time streaming test chat command ~/chat_grok
 cat <<EOF > "$HOME/chat_grok"
