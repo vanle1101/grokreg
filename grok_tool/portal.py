@@ -610,10 +610,21 @@ while True:
 EOF
 chmod +x "$HOME/chat_grok" 2>/dev/null || true
 
+# Add alias grok so user can simply type 'grok' in WSL/Linux terminal
+if ! grep -q 'alias grok=' "$HOME/.bashrc" 2>/dev/null; then
+    echo "alias grok=\"\$HOME/chat_grok\"" >> "$HOME/.bashrc"
+fi
+if [ -f "$HOME/.zshrc" ] && ! grep -q 'alias grok=' "$HOME/.zshrc" 2>/dev/null; then
+    echo "alias grok=\"\$HOME/chat_grok\"" >> "$HOME/.zshrc"
+fi
+mkdir -p "$HOME/.local/bin" 2>/dev/null || true
+cp "$HOME/chat_grok" "$HOME/.local/bin/grok" 2>/dev/null || true
+chmod +x "$HOME/.local/bin/grok" 2>/dev/null || true
+
 echo -e "\\033[1;36m============================================================\\033[0m"
-echo -e "\\033[1;33m🎉 CAI DAT HOAN TAT 100% TREN LINUX / MACOS!\\033[0m"
-echo -e "\\033[1;37m👉 De ap dung ngay, go lenh: \\033[1;32msource ~/.bashrc\\033[0m (hoac \\033[1;32msource ~/.zshrc\\033[0m)"
-echo -e "\\033[1;37m👉 Test chat nhanh bang lenh: \\033[1;32m~/chat_grok\\033[0m"
+echo -e "\\033[1;33m🎉 CAI DAT HOAN TAT 100% TREN WSL / LINUX / MACOS!\\033[0m"
+echo -e "\\033[1;37m👉 De ap dung ngay, go lenh: \\033[1;32msource ~/.bashrc\\033[0m"
+echo -e "\\033[1;37m👉 Bat dau chat ngay bang cach go chu: \\033[1;32mgrok\\033[0m"
 """
 
 class PortalHandler(BaseHTTPRequestHandler):
