@@ -613,82 +613,10 @@ cat <<EOF > "$GROK_DIR/auth.json"
 EOF
 echo -e "\\033[1;32m[OK] Da tu dong cau hinh ~/.grok/config.toml cho Grok Build CLI!\\033[0m"
 
-# 3. Create quick real-time streaming test chat command ~/chat_grok
-cat <<EOF > "$HOME/chat_grok"
-#!/usr/bin/env python3
-import urllib.request, json, os, sys
-
-BASE = os.environ.get("OPENAI_BASE_URL", "$BASE_URL")
-KEY = os.environ.get("OPENAI_API_KEY", "$API_KEY")
-MODEL = "$DEFAULT_MODEL"
-
-print("=== 🚀 GROK 4.6 AI DA KET NOI (Go quit de thoat, /clear de xoa chat) ===\\n")
-while True:
-    try:
-        q = input("👤 Ban: ")
-    except (EOFError, KeyboardInterrupt):
-        print("\\nTam biet!")
-        break
-    if q.lower() in ["quit", "exit"]:
-        break
-    if not q.strip():
-        continue
-    if q.lower() in ["/clear", "/cls", "/reset", "/new"]:
-        os.system("clear")
-        print("=== 🚀 GROK 4.6 AI DA KET NOI (Go quit de thoat, /clear de xoa chat) ===\\n")
-        continue
-    if q.startswith("/model "):
-        MODEL = q.split(" ", 1)[1].strip()
-        print(f"⚡ Da doi sang model: {{MODEL}}\\n")
-        continue
-    
-    try:
-        msgs = [
-            {{"role": "system", "content": "You are Grok 4.6, the latest flagship AI developed by xAI. You are extremely intelligent, fast, and helpful."}},
-            {{"role": "user", "content": q}}
-        ]
-        req = urllib.request.Request(
-            f"{{BASE}}/chat/completions",
-            headers={{"Authorization": f"Bearer {{KEY}}", "Content-Type": "application/json"}},
-            data=json.dumps({{"model": MODEL, "messages": msgs, "stream": True}}).encode("utf-8")
-        )
-        
-        print(f"🤖 Grok 4.6: ", end="", flush=True)
-        with urllib.request.urlopen(req, timeout=90) as resp:
-            for line in resp:
-                l = line.decode("utf-8").strip()
-                if not l or not l.startswith("data:"):
-                    continue
-                d = l[5:].strip()
-                if d == "[DONE]":
-                    break
-                try:
-                    c = json.loads(d).get("choices", [{{}}])[0].get("delta", {{}}).get("content", "")
-                    if c:
-                        print(c, end="", flush=True)
-                except Exception:
-                    pass
-        print("\\n")
-    except Exception as e:
-        print(f"\\nLoi: {{e}}\\n")
-EOF
-chmod +x "$HOME/chat_grok" 2>/dev/null || true
-
-# Add alias grok so user can simply type 'grok' in WSL/Linux terminal
-if ! grep -q 'alias grok=' "$HOME/.bashrc" 2>/dev/null; then
-    echo "alias grok=\"\$HOME/chat_grok\"" >> "$HOME/.bashrc"
-fi
-if [ -f "$HOME/.zshrc" ] && ! grep -q 'alias grok=' "$HOME/.zshrc" 2>/dev/null; then
-    echo "alias grok=\"\$HOME/chat_grok\"" >> "$HOME/.zshrc"
-fi
-mkdir -p "$HOME/.local/bin" 2>/dev/null || true
-cp "$HOME/chat_grok" "$HOME/.local/bin/grok" 2>/dev/null || true
-chmod +x "$HOME/.local/bin/grok" 2>/dev/null || true
-
 echo -e "\\033[1;36m============================================================\\033[0m"
 echo -e "\\033[1;33m🎉 CAI DAT HOAN TAT 100% TREN WSL / LINUX / MACOS!\\033[0m"
 echo -e "\\033[1;37m👉 De ap dung ngay, go lenh: \\033[1;32msource ~/.bashrc\\033[0m"
-echo -e "\\033[1;37m👉 Bat dau chat ngay bang cach go chu: \\033[1;32mgrok\\033[0m"
+echo -e "\\033[1;37m👉 Mo Grok Build TUI bang cach go chu: \\033[1;32mgrok\\033[0m"
 """
 
 class PortalHandler(BaseHTTPRequestHandler):
