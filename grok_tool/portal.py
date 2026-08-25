@@ -529,12 +529,15 @@ fi
 # 1. Configure Shell RC files
 SHELL_FILES=("$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile")
 ENV_BLOCK="
-# Grok API Environment Variables
-export OPENAI_BASE_URL=\\"$BASE_URL\\"
-export OPENAI_API_KEY=\\"$API_KEY\\"
-export CODEX_API_KEY=\\"$API_KEY\\"
-export XAI_BASE_URL=\\"$BASE_URL\\"
-export XAI_API_KEY=\\"$API_KEY\\"
+# Grok API & Grok Build Environment Variables
+export XAI_API_KEY=\"$API_KEY\"
+export XAI_API_BASE_URL=\"$BASE_URL\"
+export GROK_XAI_API_BASE_URL=\"$BASE_URL\"
+export GROK_MODELS_BASE_URL=\"$BASE_URL\"
+export GROK_DEPLOYMENT_KEY=\"$API_KEY\"
+export OPENAI_BASE_URL=\"$BASE_URL\"
+export OPENAI_API_KEY=\"$API_KEY\"
+export CODEX_API_KEY=\"$API_KEY\"
 "
 
 for rc in "${{SHELL_FILES[@]}}"; do
