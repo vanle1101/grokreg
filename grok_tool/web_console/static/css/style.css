@@ -127,3 +127,78 @@ html:not(.dark-theme) .log-console .line:hover{background:#f8fafc}html:not(.dark
 .tool-tile{animation:item-enter .28s ease-out both}.tool-tile:nth-child(2){animation-delay:35ms}.tool-tile:nth-child(3){animation-delay:70ms}.tool-tile:nth-child(4){animation-delay:105ms}.tool-tile:nth-child(5){animation-delay:140ms}.tool-tile:nth-child(6){animation-delay:175ms}.tool-tile:nth-child(7){animation-delay:210ms}
 @media(max-width:760px){.mobile-menu{display:flex!important}.topbar{padding-top:24px;padding-bottom:16px}.page{gap:16px}.card,.settings-card{padding:16px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* Customer template box — Professional Terminal & Card design */
+.customer-template-box {
+  background: var(--subtle);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--fg);
+}
+.customer-template-box .template-title {
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--primary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.customer-template-box .info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+.customer-template-box .info-row .lbl {
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+  min-width: 110px;
+}
+.customer-template-box .info-row .val {
+  font-family: var(--mono);
+  font-weight: 550;
+  color: var(--fg);
+  word-break: break-all;
+}
+.customer-template-box .info-row .val a {
+  color: var(--primary);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--primary);
+}
+.customer-template-box .info-row .val a:hover {
+  border-bottom-style: solid;
+}
+.customer-oneclick-box {
+  position: relative;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #38bdf8;
+  word-break: break-all;
+  user-select: all;
+  margin-top: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.dark-theme .customer-template-box {
+  background: rgba(15, 23, 42, 0.45);
+  border-color: rgba(56, 189, 248, 0.2);
+}
+.dark-theme .customer-template-box .template-title {
+  color: #38bdf8;
+}
+.dark-theme .customer-template-box .info-row .val a {
+  color: #38bdf8;
+  border-bottom-color: #38bdf8;
+}
+

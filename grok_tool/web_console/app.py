@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -451,6 +451,125 @@ def generate_sub2api_keys(req: GenerateKeysRequest):
     }
 
 
+@app.get("/api/sub2api/pool/stats")
+def get_sub2api_pool_stats():
+    import requests
+    from grokreg.core.config import load_config
+
+    cfg = load_config()
+    s2 = cfg.get("sub2api") if isinstance(cfg.get("sub2api"), dict) else {}
+    base_url = (s2.get("sub2api_url") or cfg.get("sub2api_url") or "https://grokapi.duckdns.org").rstrip("/")
+    user = s2.get("sub2api_user") or cfg.get("sub2api_user")
+    pwd = s2.get("sub2api_pass") or cfg.get("sub2api_password")
+
+    if not user or not pwd:
+        return {
+            "connected": False,
+            "total_accounts": 0,
+            "active_accounts": 0,
+            "total_tokens": 0,
+            "remaining_tokens": 0,
+            "remaining_percent": 100,
+        }
+
+    try:
+        r = requests.post(f"{base_url}/api/v1/auth/login", json={"email": user, "password": pwd}, timeout=6)
+        auth_token = r.json().get("data", {}).get("access_token")
+        if not auth_token:
+            raise Exception("No token")
+        headers = {"Authorization": f"Bearer {auth_token}"}
+
+        # 1. Get Accounts count
+        ar = requests.get(f"{base_url}/api/v1/admin/accounts?page=1&page_size=100", headers=headers, timeout=6)
+        ad = ar.json().get("data", {})
+        total_accounts = ad.get("total", 0)
+        items = ad.get("items", [])
+
+        # 2. Get Groups for quota info
+        gr = requests.get(f"{base_url}/api/v1/admin/groups", headers=headers, timeout=6)
+        gd = gr.json().get("data", {}).get("items", [])
+        grok_group = next((g for g in gd if g.get("name", "").lower() == "grok"), None)
+        active_accounts = grok_group.get("active_account_count", total_accounts) if grok_group else total_accounts
+
+        # Quy ước: 1 acc Grok Free = 50,000 tokens / rolling window
+        token_per_acc = 50000
+        total_max_tokens = total_accounts * token_per_acc
+
+        # 3. Get exact key usage from keys list
+        used_tokens_estimated = 0
+        for it in items:
+            status = it.get("status", "active")
+            if status != "active":
+                used_tokens_estimated += token_per_acc
+
+        used_tokens_from_keys = 0
+        try:
+            kr = requests.get(f"{base_url}/api/v1/keys?page=1&page_size=100", headers=headers, timeout=6)
+            kd = kr.json().get("data", {}).get("items", [])
+            total_key_quota_used_usd = sum(float(k.get("quota_used") or 0) for k in kd)
+            used_tokens_from_keys = round(total_key_quota_used_usd * 500000)
+        except Exception:
+            pass
+
+        total_used_tokens = used_tokens_estimated + used_tokens_from_keys
+        remaining_tokens = max(0, total_max_tokens - total_used_tokens)
+        remaining_percent = round((remaining_tokens / total_max_tokens * 100.0), 2) if total_max_tokens > 0 else 100.0
+
+        return {
+            "connected": True,
+            "base_url": base_url,
+            "total_accounts": total_accounts,
+            "active_accounts": active_accounts,
+            "token_per_acc": token_per_acc,
+            "total_max_tokens": total_max_tokens,
+            "remaining_tokens": remaining_tokens,
+            "used_tokens": total_used_tokens,
+            "remaining_percent": remaining_percent,
+            "safe_keys": {
+                "10k": remaining_tokens // 10000,
+                "50k": remaining_tokens // 50000,
+                "100k": remaining_tokens // 100000,
+                "500k": remaining_tokens // 500000,
+                "1m": remaining_tokens // 1000000,
+            }
+        }
+    except Exception as e:
+        # Fallback to local accounts.txt if Sub2API is unreachable
+        local_ok = 0
+        acc_file = Path(__file__).resolve().parent / "data" / "accounts.txt"
+        if not acc_file.exists():
+            acc_file = Path(__file__).resolve().parents[1] / "data" / "accounts.txt"
+        if acc_file.exists():
+            try:
+                for line in acc_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    if "|" in line:
+                        st = line.split("|")[-1].strip().lower()
+                        if "success" in st or "added_sub2api" in st:
+                            local_ok += 1
+            except Exception:
+                pass
+        token_per_acc = 50000
+        total_tokens = max(local_ok, 0) * token_per_acc
+        return {
+            "connected": False,
+            "error": str(e),
+            "total_accounts": local_ok,
+            "active_accounts": local_ok,
+            "token_per_acc": token_per_acc,
+            "total_max_tokens": total_tokens,
+            "remaining_tokens": total_tokens,
+            "used_tokens": 0,
+            "remaining_percent": 100.0,
+            "safe_keys": {
+                "10k": total_tokens // 10000,
+                "50k": total_tokens // 50000,
+                "100k": total_tokens // 100000,
+                "500k": total_tokens // 500000,
+                "1m": total_tokens // 1000000,
+            },
+        }
+
+
 @app.get("/api/sub2api/keys/list")
 def list_sub2api_keys(page: int = 1, page_size: int = 50):
     import requests
@@ -473,9 +592,70 @@ def list_sub2api_keys(page: int = 1, page_size: int = 50):
         headers = {"Authorization": f"Bearer {auth_token}"}
         kr = requests.get(f"{base_url}/api/v1/keys?page={page}&page_size={page_size}", headers=headers, timeout=10)
         data = kr.json().get("data", {})
+
+        items = data.get("items", [])
+        for item in items:
+            key_str = item.get("key")
+            if key_str:
+                try:
+                    cr = requests.get(f"{base_url}/api/check-key?key={key_str}", timeout=2)
+                    cd = cr.json()
+                    if cd.get("ok"):
+                        item["actual_used_tokens"] = cd.get("used_tokens")
+                        item["actual_remain_tokens"] = cd.get("remain_tokens")
+                        item["actual_remain_pct"] = cd.get("remain_pct")
+                except Exception:
+                    pass
         return data
     except Exception:
         return {"items": [], "total": 0}
+
+
+@app.get("/setup-windows", response_class=PlainTextResponse)
+@app.get("/api/v1/setup-windows", response_class=PlainTextResponse)
+def get_setup_windows_script(key: str = "", model: str = "grok-4.6", base: str = "https://grokapi.duckdns.org/v1"):
+    ps_script = f"""# Grok API 1-Click Auto Setup Script
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "   ⚡ GROK API 1-CLICK AUTO-SETUP (NEXUS AI SYSTEM)" -ForegroundColor Yellow
+Write-Host "============================================================" -ForegroundColor Cyan
+
+$apiKey = "{key}"
+$baseUrl = "{base}"
+$defaultModel = "{model}"
+
+if (-not $apiKey) {{
+    Write-Host "[!] Loi: Thieu API Key trong duong dan." -ForegroundColor Red
+    return
+}}
+
+Write-Host "[..] Dang thiet lap bien moi truong he thong..." -ForegroundColor Gray
+[System.Environment]::SetEnvironmentVariable('OPENAI_BASE_URL', $baseUrl, 'User')
+[System.Environment]::SetEnvironmentVariable('OPENAI_API_KEY', $apiKey, 'User')
+[System.Environment]::SetEnvironmentVariable('XAI_BASE_URL', $baseUrl, 'User')
+[System.Environment]::SetEnvironmentVariable('XAI_API_KEY', $apiKey, 'User')
+$env:OPENAI_BASE_URL = $baseUrl
+$env:OPENAI_API_KEY = $apiKey
+
+Write-Host "[OK] Da luu Base URL: $baseUrl" -ForegroundColor Green
+Write-Host "[OK] Da luu API Key vao may cua ban thanh cong!" -ForegroundColor Green
+
+$desktop = [Environment]::GetFolderPath("Desktop")
+$batPath = "$desktop\\Chat_Grok.bat"
+
+$chatScript = @"
+@echo off
+chcp 65001 >nul
+title Grok 4.6 AI Terminal
+python -c "import urllib.request, json, os; print('=== 🚀 GROK 4.6 AI DA KET NOI (Go quit de thoat) ===\\n'); while True: q = input('👤 Ban: '); if q.lower() in ['quit', 'exit']: break; if not q.strip(): continue; req = urllib.request.Request('$baseUrl/chat/completions', headers={{'Authorization': 'Bearer $apiKey', 'Content-Type': 'application/json'}}, data=json.dumps({{'model':'$defaultModel','messages':[{{'role':'user','content':q}}]}}).encode('utf-8')); print('🤖 Grok 4.6: ', json.loads(urllib.request.urlopen(req).read().decode('utf-8'))['choices'][0]['message']['content'], '\\n')"
+pause
+"@
+
+Set-Content -Path $batPath -Value $chatScript -Encoding UTF8
+Write-Host "[OK] Da tao icon 'Chat_Grok.bat' tren man hinh Desktop!" -ForegroundColor Green
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "🎉 CAI DAT HOAN TAT 100%! Ban co the mo icon tren Desktop hoac dung trong VS Code/Cursor ngay!" -ForegroundColor Yellow
+"""
+    return PlainTextResponse(ps_script, media_type="text/plain; charset=utf-8")
 
 
 def main():

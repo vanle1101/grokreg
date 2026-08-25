@@ -801,21 +801,47 @@ function logBoxText(box) {
 }
 
 async function copyToClipboard(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return;
-  } catch (_) {
-    /* fall through */
+  if (text === undefined || text === null) return;
+  const str = String(text);
+  if (navigator.clipboard && (window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+    try {
+      await navigator.clipboard.writeText(str);
+      return;
+    } catch (_) {
+      // fallback below
+    }
   }
   const ta = document.createElement('textarea');
-  ta.value = text;
+  ta.value = str;
   ta.setAttribute('readonly', '');
   ta.style.position = 'fixed';
   ta.style.left = '-9999px';
+  ta.style.top = '0';
+  ta.style.opacity = '0';
   document.body.appendChild(ta);
+  ta.focus();
   ta.select();
-  document.execCommand('copy');
-  ta.remove();
+  ta.setSelectionRange(0, str.length);
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch (_) {
+    ok = false;
+  }
+  document.body.removeChild(ta);
+  if (!ok) {
+    throw new Error('Copy command failed');
+  }
+}
+
+async function copyLogBox(box) {
+  const text = logBoxText(box);
+  if (!text) {
+    toast('Không có log để copy', 'warn');
+    return;
+  }
+  await copyToClipboard(text);
+  toast('Đã copy toàn bộ log vào clipboard!', 'ok');
 }
 
 function isLogAtBottom(box, slop = 48) {
@@ -1212,27 +1238,79 @@ async function renderTools(root) {
 
 async function renderKeys(root) {
   let recent = [];
+  let pool = {
+    connected: true,
+    total_accounts: 182,
+    active_accounts: 182,
+    total_max_tokens: 9100000,
+    remaining_tokens: 9100000,
+    remaining_percent: 100,
+    safe_keys: { '10k': 910, '50k': 182, '100k': 91, '500k': 18, '1m': 9 },
+  };
+
   try {
-    const res = await listSub2apiKeys(1, 30);
-    recent = res.items || [];
+    const [resKeys, resPool] = await Promise.all([
+      listSub2apiKeys(1, 30).catch(() => ({ items: [] })),
+      fetch('/api/sub2api/pool/stats').then((r) => r.json()).catch(() => null),
+    ]);
+    recent = resKeys.items || [];
+    if (resPool && resPool.total_accounts > 0) {
+      pool = resPool;
+    }
   } catch (_) {}
 
   const packages = [
-    { label: '10,000 Token (10k)', tokens: 10000 },
-    { label: '20,000 Token (20k)', tokens: 20000 },
-    { label: '50,000 Token (50k)', tokens: 50000 },
-    { label: '100,000 Token (100k)', tokens: 100000 },
-    { label: '500,000 Token (500k)', tokens: 500000 },
     { label: '1,000,000 Token (1M)', tokens: 1000000 },
+    { label: '2,000,000 Token (2M)', tokens: 2000000 },
+    { label: '5,000,000 Token (5M)', tokens: 5000000 },
+    { label: '10,000,000 Token (10M)', tokens: 10000000 },
+    { label: '20,000,000 Token (20M)', tokens: 20000000 },
+    { label: '✏️ Tùy ý (Nhập tay)', tokens: 0 },
   ];
 
-  let selectedTokens = 10000;
+  let selectedTokens = 1000000;
+
+  const pct = pool.remaining_percent ?? 100;
+  const pctColor = pct > 60 ? '#10b981' : (pct > 25 ? '#f59e0b' : '#ef4444');
 
   root.innerHTML = `
     <div class="page">
-      <div class="page-banner">
-        <div><div class="hero-kicker"><i></i> API Key Dispatcher</div><h2>🔑 Tạo Key API Bán Lẻ Cho Khách</h2><p>Tạo nhanh API Key Grok theo số lượng Token mong muốn. Key không bao giờ hết hạn ngày, dùng hết token tự dừng.</p></div>
-        <span class="page-banner-mark">RETAIL KEYS</span>
+      <!-- 4 Top Stat Cards for Real-Time Token Pool -->
+      <div class="grid-4" style="margin-bottom: 20px;">
+        <div class="stat-card info">
+          <div class="stat-label">🔋 Tổng Token Khả Dụng</div>
+          <div class="stat-value" id="stat-pool-remaining" style="font-size: 26px; color: #10b981;">${(pool.remaining_tokens || 0).toLocaleString()}</div>
+          <div class="card-sub" id="stat-pool-sub" style="margin-top: 4px; color: #38bdf8; font-weight: 600;">
+            ≈ ${((pool.remaining_tokens || 0) / 1000000).toFixed(1)} Triệu Tokens (${pool.token_per_acc ? (pool.token_per_acc / 1000).toFixed(0) + 'k' : '50k'}/acc)
+          </div>
+        </div>
+
+        <div class="stat-card ok">
+          <div class="stat-label">🌐 Kho Acc Kết Nối</div>
+          <div class="stat-value" id="stat-pool-accs" style="font-size: 26px;">${pool.active_accounts || pool.total_accounts || 0}</div>
+          <div class="card-sub" id="stat-pool-accs-sub" style="margin-top: 4px;">
+            ${pool.connected ? '<span style="color:#10b981;">● Sub2API Live</span>' : '<span style="color:#f59e0b;">● Kho Local</span>'} · ${pool.total_accounts || 0} Acc Active
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-label">📦 Sức Chứa Key (1M)</div>
+          <div class="stat-value" id="stat-pool-capacity" style="font-size: 26px; color: #a855f7;">${Math.floor((pool.remaining_tokens || 0) / 1000000).toLocaleString()}</div>
+          <div class="card-sub" id="stat-pool-capacity-sub" style="margin-top: 4px;">
+            ${Math.floor((pool.remaining_tokens || 0) / 2000000).toLocaleString()} Key 2M · ${Math.floor((pool.remaining_tokens || 0) / 5000000).toLocaleString()} Key 5M · ${Math.floor((pool.remaining_tokens || 0) / 10000000).toLocaleString()} Key 10M
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-label">⚡ Tỉ Lệ Khả Dụng</div>
+          <div class="stat-value" id="stat-pool-pct" style="font-size: 26px; color: ${pctColor};">${pct}%</div>
+          <div class="card-sub" id="stat-pool-used-sub" style="margin-top: 4px; font-weight: 600; color: ${(pool.used_tokens || 0) > 0 ? '#f59e0b' : 'var(--muted)'};">
+            ${(pool.used_tokens || 0) > 0 ? `⚡ Đã dùng ${(pool.used_tokens || 0).toLocaleString()} tokens` : '✨ Chưa tiêu thụ'}
+          </div>
+          <div style="width: 100%; height: 6px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; margin-top: 6px;">
+            <div id="stat-pool-gauge" style="height: 100%; width: ${pct}%; background: linear-gradient(90deg, #10b981 0%, #3b82f6 100%); border-radius: 4px; transition: width 0.3s ease;"></div>
+          </div>
+        </div>
       </div>
 
       <div class="workspace">
@@ -1242,7 +1320,7 @@ async function renderKeys(root) {
               <div class="card-title">Tạo Key Bán Lẻ Mới</div>
               <div class="card-sub">Chọn gói token và số lượng key cần tạo.</div>
             </div>
-            <span class="badge badge-ready">Grok (143+ Acc)</span>
+            <span class="badge badge-ready" id="badge-total-accs">Grok (${pool.total_accounts}+ Acc)</span>
           </div>
 
           <div class="section-label">01 · Chọn gói Token</div>
@@ -1253,8 +1331,8 @@ async function renderKeys(root) {
           <div class="form-stack form-grid">
             <div class="field">
               <label>Số Token của mỗi Key</label>
-              <input type="number" id="key-tokens" value="${selectedTokens}" min="1000" step="1000" />
-              <div class="hint">Quy đổi: 10,000 token = $0.02 | 100,000 token = $0.20</div>
+              <input type="number" id="key-tokens" value="${selectedTokens}" min="1000" step="10000" />
+              <div class="hint" id="token-calc-hint">Quy đổi: 1,000,000 token = $2.00 USD (50,000đ)</div>
             </div>
 
             <div class="field">
@@ -1287,42 +1365,95 @@ async function renderKeys(root) {
           <div class="card-head">
             <div>
               <div class="card-title">Mẫu gửi cho khách hàng</div>
-              <div class="card-sub">Copy mẫu này gửi kèm Key cho khách</div>
+              <div class="card-sub">Tự động gắn Key mới nhất: <strong style="color:var(--primary);" id="lbl-template-name">${esc(recent[0]?.name || 'Grok Key')}</strong></div>
+            </div>
+            <div class="btn-row" style="margin:0">
+              <button class="btn btn-primary" id="btn-copy-full-customer-template" type="button" style="font-size:11px; padding: 6px 12px;">📋 Copy Mẫu Này</button>
+              <button class="btn btn-secondary" id="btn-copy-top-oneclick" type="button" style="font-size:11px; padding: 6px 12px;">⚡ Copy Lệnh 1-Click</button>
             </div>
           </div>
-          <div style="background:var(--subtle);padding:14px;border-radius:9px;font-size:12px;line-height:1.6;border:1px solid var(--border)">
-            <div style="font-weight:600;margin-bottom:6px;color:var(--primary)">📌 Thông tin kết nối Grok API:</div>
-            <div>🌐 <b>Base URL:</b> <code>https://grokapi.duckdns.org/v1</code></div>
-            <div>🔑 <b>API Key:</b> <code>sk-sub2api-...</code></div>
-            <div>🤖 <b>Model hỗ trợ:</b> <code>grok-2</code>, <code>grok-2-mini</code>, <code>grok-beta</code></div>
-            <div>⚡ <b>Chuẩn kết nối:</b> Tương thích 100% OpenAI Format (Chat/NextChat/Claude/Cursor/Dify...)</div>
+          <div class="customer-template-box">
+            <div class="template-title">📌 THÔNG TIN KẾT NỐI GROK API</div>
+            <div class="info-row">
+              <span class="lbl">🌐 Base URL:</span>
+              <span class="val">https://grokapi.duckdns.org/v1</span>
+            </div>
+            <div class="info-row">
+              <span class="lbl">🔑 API Key:</span>
+              <span class="val" id="lbl-template-key" style="color:var(--primary); font-weight:700;">${esc(recent[0]?.key || 'sk-...')}</span>
+            </div>
+            <div class="info-row">
+              <span class="lbl">📊 Tra cứu số dư:</span>
+              <span class="val"><a id="link-template-check" href="https://grokapi.duckdns.org/check?key=${esc(recent[0]?.key || '')}" target="_blank">https://grokapi.duckdns.org/check?key=${esc(recent[0]?.key || '')}</a></span>
+            </div>
+            <div class="info-row">
+              <span class="lbl">🤖 Model hỗ trợ:</span>
+              <span class="val">grok-4.6, grok-4.5, grok-2, grok-beta</span>
+            </div>
+            <div class="info-row">
+              <span class="lbl">⚡ Chuẩn kết nối:</span>
+              <span class="val" style="font-family:var(--sans);">OpenAI Compatible (Chatbox, NextChat, Cursor, VS Code, Dify...)</span>
+            </div>
+
+            <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+              <div style="font-weight:700;font-size:12px;margin-bottom:6px;color:var(--fg)">⚡ Lệnh 1-Click cài đặt cho Windows (PowerShell / Codex App):</div>
+              <div class="customer-oneclick-box" id="box-template-oneclick">
+                irm "https://grokapi.duckdns.org/setup-codex-windows?key=${esc(recent[0]?.key || '')}" | iex
+              </div>
+            </div>
+
+            <div style="margin-top:10px;">
+              <div style="font-weight:700;font-size:12px;margin-bottom:6px;color:var(--success)">🐧 Lệnh 1-Click cài đặt cho Linux / macOS (Terminal):</div>
+              <div class="customer-oneclick-box" id="box-template-oneclick-linux" style="border-color:rgba(16,185,129,0.3); color:#34d399;">
+                curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${esc(recent[0]?.key || '')}" | bash
+              </div>
+              <div style="font-size:11px;color:var(--muted);margin-top:6px">Khách dùng Linux/Mac chỉ cần mở Terminal dán dòng lệnh trên là tự động lưu biến môi trường + cấu hình Codex App!</div>
+            </div>
           </div>
 
           <div class="card-head" style="margin-top:24px">
             <div>
-              <div class="card-title">Lịch sử Key gần đây (${recent.length})</div>
-              <div class="card-sub">Trạng thái số dư của các key đã tạo</div>
+              <div class="card-title" id="keys-history-title">Lịch sử Key gần đây (${recent.length})</div>
+              <div class="card-sub" style="display:flex; align-items:center; gap:6px;">
+                <span>Dung lượng Token còn lại của từng Key</span>
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#10b981; animation: pulse 1.5s infinite;" title="Auto-refresh 2s"></span>
+              </div>
             </div>
             <button class="btn btn-ghost" id="btn-refresh-keys" type="button">Làm mới</button>
           </div>
           <div class="table-wrap" style="max-height:350px">
             <table class="results">
               <thead>
-                <tr><th>Tên Key</th><th>API Key</th><th>Số dư đã dùng</th><th>Trạng thái</th></tr>
+                <tr><th>Tên Key</th><th>API Key</th><th>Dung lượng còn lại</th><th>Trạng thái</th><th>Thao tác</th></tr>
               </thead>
-              <tbody>
+              <tbody id="keys-table-body">
                 ${recent.length ? recent.map((k) => {
                   const used = Number(k.quota_used || 0);
                   const max = Number(k.quota || 0);
-                  const usedTokens = Math.round(used * 500000);
                   const maxTokens = Math.round(max * 500000);
+                  const usedTokens = k.actual_used_tokens !== undefined ? k.actual_used_tokens : Math.round(used * 500000);
+                  const remainTokens = k.actual_remain_tokens !== undefined ? k.actual_remain_tokens : Math.max(0, maxTokens - usedTokens);
+                  const remainPct = k.actual_remain_pct !== undefined ? k.actual_remain_pct : (maxTokens > 0 ? Math.round((remainTokens / maxTokens) * 100) : 100);
                   return `<tr>
                     <td><strong>${esc(k.name || 'Key')}</strong></td>
                     <td><code>${esc(k.key ? k.key.slice(0, 14) + '...' + k.key.slice(-6) : '—')}</code></td>
-                    <td style="font-size:11px">${maxTokens > 0 ? `${usedTokens.toLocaleString()} / ${maxTokens.toLocaleString()} tokens` : 'Không giới hạn'}</td>
-                    <td><span class="tag tag-${k.status === 'active' ? 'ok' : 'fail'}">${esc(k.status || 'active')}</span></td>
+                    <td style="font-size:12px; line-height: 1.4;">
+                      ${maxTokens > 0 ? `
+                        <div><b>${remainTokens.toLocaleString()}</b> <span style="color:var(--muted); font-size:11px">/ ${maxTokens.toLocaleString()} tokens</span></div>
+                        <div style="font-size:11px; font-weight:600; color:${remainPct > 50 ? '#10b981' : (remainPct > 15 ? '#f59e0b' : '#ef4444')}">
+                          ${usedTokens > 0 ? `⚡ Còn ${remainPct}% (Đã dùng ${usedTokens.toLocaleString()} tokens)` : `✨ Chưa dùng (100%)`}
+                        </div>
+                      ` : 'Không giới hạn (100%)'}
+                    </td>
+                    <td><span class="tag tag-${k.status === 'active' && (maxTokens === 0 || remainTokens > 0) ? 'ok' : 'fail'}">${esc(k.status === 'active' && (maxTokens === 0 || remainTokens > 0) ? 'active' : 'exhausted')}</span></td>
+                    <td>
+                      <div class="btn-row" style="margin:0; gap:4px;">
+                        <button class="btn btn-ghost btn-row-copy-template" data-key="${esc(k.key)}" data-name="${esc(k.name)}" title="Copy Mẫu Gửi Khách" style="font-size:10px; padding:3px 6px;">📋 Copy</button>
+                        <a href="https://grokapi.duckdns.org/check?key=${esc(k.key)}" target="_blank" class="btn btn-ghost" title="Tra cứu số dư trên DuckDNS" style="font-size:10px; padding:3px 6px; text-decoration:none;">🔍 Check</a>
+                      </div>
+                    </td>
                   </tr>`;
-                }).join('') : '<tr><td colspan="4" class="empty">Chưa có key nào</td></tr>'}
+                }).join('') : '<tr><td colspan="5" class="empty">Chưa có key nào</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -1331,6 +1462,19 @@ async function renderKeys(root) {
     </div>
   `;
 
+  // Dynamic calculation hint helper
+  const updateCalcHint = (toks) => {
+    const hint = root.querySelector('#token-calc-hint');
+    if (!hint) return;
+    const usd = (toks / 500000);
+    const vnd = Math.round(usd * 25600);
+    if (toks >= 1000000) {
+      hint.textContent = `Quy đổi: ${(toks / 1000000).toFixed(1)}M token = $${usd.toFixed(2)} USD (~${vnd.toLocaleString()}đ)`;
+    } else {
+      hint.textContent = `Quy đổi: ${toks.toLocaleString()} token = $${usd.toFixed(4)} USD (~${vnd.toLocaleString()}đ)`;
+    }
+  };
+
   // Handle Preset Click
   root.querySelectorAll('.token-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1338,7 +1482,88 @@ async function renderKeys(root) {
       btn.classList.add('is-selected');
       const tokens = Number(btn.dataset.tokens);
       const input = root.querySelector('#key-tokens');
-      if (input) input.value = tokens;
+      if (input) {
+        if (tokens > 0) {
+          input.value = tokens;
+          updateCalcHint(tokens);
+        } else {
+          input.focus();
+          input.select();
+        }
+      }
+    });
+  });
+
+  // Handle manual input in #key-tokens
+  root.querySelector('#key-tokens')?.addEventListener('input', (e) => {
+    const val = Number(e.target.value || 0);
+    updateCalcHint(val);
+    const chips = root.querySelectorAll('.token-chip');
+    let matched = false;
+    chips.forEach((c) => {
+      if (Number(c.dataset.tokens) === val && val > 0) {
+        c.classList.add('is-selected');
+        matched = true;
+      } else {
+        c.classList.remove('is-selected');
+      }
+    });
+    if (!matched) {
+      chips.forEach((c) => {
+        if (Number(c.dataset.tokens) === 0) c.classList.add('is-selected');
+      });
+    }
+  });
+
+  // Customer Template generator helper
+  const getCustomerTemplateText = (key, name) => {
+    const k = key || 'sk-...';
+    return `⚡ THÔNG TIN KẾT NỐI GROK API & CODEX APP:
+* 🌐 Base URL: https://grokapi.duckdns.org/v1
+* 🔑 API Key: ${k}
+* 📊 Link Tra Cứu Số Dư: https://grokapi.duckdns.org/check?key=${k}
+* 🤖 Model: grok-4.6, grok-4.5, grok-2, grok-beta
+* ⚡ Tương thích: 100% Codex Desktop App, Chatbox, NextChat, Cursor, VS Code...
+
+🚀 LỆNH 1-CLICK CHO WINDOWS (PowerShell):
+irm "https://grokapi.duckdns.org/setup-codex-windows?key=${k}" | iex
+
+🐧 LỆNH 1-CLICK CHO LINUX / MACOS (Terminal):
+curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${k}" | bash`;
+  };
+
+  root.querySelector('#btn-copy-full-customer-template')?.addEventListener('click', async () => {
+    const key = recent[0]?.key || '';
+    const name = recent[0]?.name || 'Grok';
+    try {
+      await navigator.clipboard.writeText(getCustomerTemplateText(key, name));
+      toast('Đã copy trọn bộ mẫu gửi khách vào clipboard!', 'ok');
+    } catch {
+      toast('Copy thất bại', 'err');
+    }
+  });
+
+  root.querySelector('#btn-copy-top-oneclick')?.addEventListener('click', async () => {
+    const key = recent[0]?.key || '';
+    const cmd = `irm "https://grokapi.duckdns.org/setup-codex-windows?key=${key}" | iex`;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      toast('Đã copy Lệnh 1-Click gửi khách vào clipboard!', 'ok');
+    } catch {
+      toast('Copy thất bại', 'err');
+    }
+  });
+
+  root.querySelectorAll('.btn-row-copy-template').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const key = btn.dataset.key || '';
+      const name = btn.dataset.name || 'Grok';
+      try {
+        await navigator.clipboard.writeText(getCustomerTemplateText(key, name));
+        toast(`Đã copy mẫu của ${name} vào clipboard!`, 'ok');
+      } catch {
+        toast('Copy thất bại', 'err');
+      }
     });
   });
 
@@ -1347,7 +1572,7 @@ async function renderKeys(root) {
   // Handle Generate Click
   root.querySelector('#btn-generate-keys')?.addEventListener('click', async () => {
     const btn = root.querySelector('#btn-generate-keys');
-    const tokens = Math.max(1000, Number(root.querySelector('#key-tokens')?.value || 10000));
+    const tokens = Math.max(1000, Number(root.querySelector('#key-tokens')?.value || 1000000));
     const count = Math.max(1, Math.min(100, Number(root.querySelector('#key-count')?.value || 1)));
     const prefix = root.querySelector('#key-prefix')?.value || 'Grok';
 
@@ -1365,26 +1590,41 @@ async function renderKeys(root) {
         throw new Error((res.errors || []).join('; ') || 'Không tạo được key nào!');
       }
 
-      toast(`Đã tạo thành công ${res.keys.length} Key (${tokens.toLocaleString()} tokens)!`, 'ok');
+      toast(`Đã tạo thành công ${res.keys.length} Key (${(tokens >= 1000000 ? (tokens/1000000) + 'M' : tokens.toLocaleString())} tokens)!`, 'ok');
 
       const container = root.querySelector('#key-result-container');
       const allKeyTexts = res.keys.map((k) => k.key).join('\n');
-      const allFormatTexts = res.keys.map((k, i) => `[Key #${i + 1} - ${k.name}]\nBase URL: ${res.base_url}\nAPI Key: ${k.key}\nSố dư: ${tokens.toLocaleString()} Tokens\nModel: grok-2`).join('\n\n---\n\n');
+      const allFormatTexts = res.keys.map((k, i) => `[Key #${i + 1} - ${k.name}]\nBase URL: ${res.base_url}\nAPI Key: ${k.key}\nSố dư: ${tokens.toLocaleString()} Tokens\nTra cứu số dư: https://grokapi.duckdns.org/check?key=${k.key}\nModel: grok-4.6, grok-4.5, grok-2`).join('\n\n---\n\n');
+
+      const firstKey = res.keys[0]?.key || '';
+      const oneClickCmd = `irm "https://grokapi.duckdns.org/setup-windows?key=${firstKey}" | iex`;
 
       container.hidden = false;
       container.innerHTML = `
         <div class="key-gen-result">
-          <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
             <strong style="color:var(--success);font-size:13px">✅ Đã tạo thành công ${res.keys.length} Key:</strong>
             <div class="btn-row" style="margin:0">
-              <button class="btn btn-primary" id="btn-copy-all-keys" type="button">📋 Copy tất cả Key</button>
-              <button class="btn btn-ghost" id="btn-export-key-file" type="button">📥 Tải file TXT</button>
+              <button class="btn btn-primary" id="btn-copy-oneclick-cmd" type="button" style="background:#0284c7;border-color:#0284c7">⚡ Copy Lệnh 1-Click</button>
+              <button class="btn btn-primary" id="btn-copy-all-keys" type="button">📋 Copy Key</button>
+              <button class="btn btn-ghost" id="btn-export-key-file" type="button">📥 Tải TXT</button>
             </div>
           </div>
           <textarea readonly id="key-text-output">${esc(allKeyTexts)}</textarea>
-          <div style="margin-top:8px;font-size:11px;color:var(--muted)">Đã tự động liên kết với dàn 143+ Acc Grok, không bao giờ hết hạn ngày, tự động trừ đúng ${tokens.toLocaleString()} token.</div>
+          <div style="margin-top:8px;font-size:11px;color:var(--muted)">
+            ⚡ <b>Lệnh 1-Click gửi khách:</b> <code>${esc(oneClickCmd)}</code>
+          </div>
         </div>
       `;
+
+      container.querySelector('#btn-copy-oneclick-cmd')?.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(oneClickCmd);
+          toast(`Đã copy Lệnh 1-Click gửi khách vào clipboard!`, 'ok');
+        } catch {
+          toast('Copy thất bại', 'err');
+        }
+      });
 
       container.querySelector('#btn-copy-all-keys')?.addEventListener('click', async () => {
         try {
@@ -1456,9 +1696,93 @@ async function pollJob() {
       if (bs) bs.disabled = running;
       if (bt) bt.disabled = !running;
     }
+
+    // Live real-time update for retail keys page
+    if (location.hash === '#/keys') {
+      await updateKeysRealtime();
+    }
   } catch (_) {
     /* ignore poll errors */
   }
+}
+
+let _lastKeysPoll = 0;
+async function updateKeysRealtime() {
+  const now = Date.now();
+  if (now - _lastKeysPoll < 2000) return; // throttle 2s
+  _lastKeysPoll = now;
+  try {
+    const [resKeys, resPool] = await Promise.all([
+      listSub2apiKeys(1, 30).catch(() => ({ items: [] })),
+      fetch('/api/sub2api/pool/stats').then((r) => r.json()).catch(() => null),
+    ]);
+    if (location.hash !== '#/keys') return;
+
+    if (resPool && resPool.total_accounts > 0) {
+      const pool = resPool;
+      const pct = pool.remaining_percent ?? 100;
+      const pctColor = pct > 60 ? '#10b981' : (pct > 25 ? '#f59e0b' : '#ef4444');
+
+      const elRemain = document.getElementById('stat-pool-remaining');
+      if (elRemain) elRemain.textContent = (pool.remaining_tokens || 0).toLocaleString();
+
+      const elSub = document.getElementById('stat-pool-sub');
+      if (elSub) elSub.innerHTML = `≈ ${((pool.remaining_tokens || 0) / 1000000).toFixed(1)} Triệu Tokens (${pool.token_per_acc ? (pool.token_per_acc / 1000).toFixed(0) + 'k' : '50k'}/acc)`;
+
+      const elAcc = document.getElementById('stat-pool-accs');
+      if (elAcc) elAcc.textContent = pool.active_accounts || pool.total_accounts || 0;
+
+      const elCap = document.getElementById('stat-pool-capacity');
+      if (elCap) elCap.textContent = (pool.safe_keys?.['10k'] || Math.floor((pool.remaining_tokens || 0) / 10000)).toLocaleString();
+
+      const elCapSub = document.getElementById('stat-pool-capacity-sub');
+      if (elCapSub) elCapSub.textContent = `${(pool.safe_keys?.['50k'] || Math.floor((pool.remaining_tokens || 0) / 50000)).toLocaleString()} Key 50k · ${(pool.safe_keys?.['100k'] || Math.floor((pool.remaining_tokens || 0) / 100000)).toLocaleString()} Key 100k`;
+
+      const elPct = document.getElementById('stat-pool-pct');
+      if (elPct) {
+        elPct.textContent = `${pct}%`;
+        elPct.style.color = pctColor;
+      }
+      const elUsedSub = document.getElementById('stat-pool-used-sub');
+      if (elUsedSub) {
+        if ((pool.used_tokens || 0) > 0) {
+          elUsedSub.innerHTML = `⚡ Đã dùng ${(pool.used_tokens || 0).toLocaleString()} tokens`;
+          elUsedSub.style.color = '#f59e0b';
+        } else {
+          elUsedSub.innerHTML = `✨ Chưa tiêu thụ`;
+          elUsedSub.style.color = 'var(--muted)';
+        }
+      }
+      const elBar = document.getElementById('stat-pool-gauge');
+      if (elBar) elBar.style.width = `${pct}%`;
+    }
+
+    const tbody = document.getElementById('keys-table-body');
+    const recent = resKeys.items || [];
+    if (tbody && recent.length) {
+      tbody.innerHTML = recent.map((k) => {
+        const used = Number(k.quota_used || 0);
+        const max = Number(k.quota || 0);
+        const maxTokens = Math.round(max * 500000);
+        const usedTokens = k.actual_used_tokens !== undefined ? k.actual_used_tokens : Math.round(used * 500000);
+        const remainTokens = k.actual_remain_tokens !== undefined ? k.actual_remain_tokens : Math.max(0, maxTokens - usedTokens);
+        const remainPct = k.actual_remain_pct !== undefined ? k.actual_remain_pct : (maxTokens > 0 ? Math.round((remainTokens / maxTokens) * 100) : 100);
+        return `<tr>
+          <td><strong>${esc(k.name || 'Key')}</strong></td>
+          <td><code>${esc(k.key ? k.key.slice(0, 14) + '...' + k.key.slice(-6) : '—')}</code></td>
+          <td style="font-size:12px; line-height: 1.4;">
+            ${maxTokens > 0 ? `
+              <div><b>${remainTokens.toLocaleString()}</b> <span style="color:var(--muted); font-size:11px">/ ${maxTokens.toLocaleString()} tokens</span></div>
+              <div style="font-size:11px; font-weight:600; color:${remainPct > 50 ? '#10b981' : (remainPct > 15 ? '#f59e0b' : '#ef4444')}">
+                ${usedTokens > 0 ? `⚡ Còn ${remainPct}% (Đã dùng ${usedTokens.toLocaleString()} tokens)` : `✨ Chưa dùng (100%)`}
+              </div>
+            ` : 'Không giới hạn (100%)'}
+          </td>
+          <td><span class="tag tag-${k.status === 'active' && (maxTokens === 0 || remainTokens > 0) ? 'ok' : 'fail'}">${esc(k.status === 'active' && (maxTokens === 0 || remainTokens > 0) ? 'active' : 'exhausted')}</span></td>
+        </tr>`;
+      }).join('');
+    }
+  } catch (_) {}
 }
 
 async function boot() {

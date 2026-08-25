@@ -37,7 +37,7 @@ class ClaudeToolPlugin(BaseToolPlugin):
                 type="number",
                 default=1,
                 min=0,
-                max=99,
+                max=1000000,
                 hint="0 = chạy liên tục đến khi Stop",
             ),
             ToolField(
@@ -88,10 +88,10 @@ class ClaudeToolPlugin(BaseToolPlugin):
             count = int(pool.get("slots") or pool.get("count") or 0)
             if count <= 0:
                 raise RuntimeError("Pool Hotmail trống — import acc trước khi Start")
-            count = min(count, 2000)
+            count = max(0, count)
         else:
             count = int(params.get("count") if params.get("count") is not None else 1)
-            count = max(0, min(99, count))
+            count = max(0, count)
         backend = str(params.get("backend") or "protocol").strip().lower()
         if backend not in ("protocol", "auto", "browser"):
             backend = "protocol"

@@ -168,8 +168,8 @@ def _all_full_from_accounts() -> list[dict]:
         out: list[dict] = []
         for r in by_email.values():
             tag = emr.classify(r.get("status", ""))
-            # Sheet tab = acc đã đẩy Sub2API (added_sub2api*), không lấy reg-only.
-            if tag == "full_ok":
+            # Lấy toàn bộ acc thành công (đã vào Sub2API hoặc reg thành công)
+            if tag in ("full_ok", "reg_ok"):
                 out.append(r)
         # stable-ish order: keep accounts.txt appearance order of last write
         order = []
@@ -179,7 +179,7 @@ def _all_full_from_accounts() -> list[dict]:
             if (
                 em in by_email
                 and em not in seen
-                and emr.classify(by_email[em].get("status", "")) == "full_ok"
+                and emr.classify(by_email[em].get("status", "")) in ("full_ok", "reg_ok")
             ):
                 order.append(by_email[em])
                 seen.add(em)
@@ -239,14 +239,23 @@ def build_payload(data: dict[str, Any] | None = None) -> dict[str, Any]:
             vpn.get("label") if em in session_emails else ""
         ) or (vpn.get("label") if not session_emails else "")
         when = str(r.get("ts") or "").strip()
+        st = r.get("status", "")
+        s_name = sub2api_name(st)
+        if not s_name:
+            if st == "success":
+                s_name = "reg only"
+            elif st.startswith("success_sub2api"):
+                s_name = "sub2api pending"
+            else:
+                s_name = "—"
         accounts_rows.append(
             [
                 n,
                 "FULL",
                 r.get("email", ""),
                 r.get("password", ""),
-                sub2api_name(r.get("status", "")),
-                r.get("status", ""),
+                s_name,
+                st,
                 when[:10] if when else "",
                 when or "—",
                 vpn_cell or "—",

@@ -153,6 +153,21 @@ def process_queue_once(
             if x.get("kind") == "sub2api" and x.get("status") in ("pending", "retrying")
         ][:limit]
 
+    if not pending:
+        return 0
+
+    # Fast probe Sub2API reachability before looping items to avoid hanging when server is offline
+    probe_cfg = dict(pending[0].get("sub_cfg_snapshot") or {})
+    if config:
+        probe_cfg.update(dict(config.get("sub2api") or {}))
+    try:
+        from grokreg.delivery.sub2api_client import client_from_cfg
+        _probe_client = client_from_cfg(probe_cfg)
+        _probe_client.resolve_token()
+    except Exception as _probe_exc:
+        log.debug("[delivery] Sub2API server not reachable (%s), skipping batch retry", _probe_exc)
+        return 0
+
     for rec in pending:
         rid = rec.get("id")
         email = str(rec.get("email") or "")

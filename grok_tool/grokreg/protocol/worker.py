@@ -247,25 +247,28 @@ def register_one_protocol(config: dict[str, Any], *, castle: bool = False) -> Pr
             slog.api_ok("HTTP CreateEmail (GitHub — 0 Chrome)")
             backend.send_email_code(email, SIGNUP_URL)
 
-            log.info("[protocol] polling OTP (timeout=%ss)…", timeout_otp)
-            otp_raw = wait_otp_smart(
-                email_session,
-                mail_api,
-                mailtm,
-                hotmail,
-                timeout_otp,
-                ignore_ids=set(),
-                since_iso=since_iso,
-                azpop=azpop,
-                tmail_wibu=tmail,
-            )
-            if otp_raw:
-                log.info("[protocol] solve Turnstile…")
-                token = _solve_turnstile(
-                    config, site_key=params.site_key, url=SIGNUP_URL
+            log.info("[protocol] polling OTP and solving Turnstile concurrently…")
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                otp_fut = pool.submit(
+                    wait_otp_smart,
+                    email_session,
+                    mail_api,
+                    mailtm,
+                    hotmail,
+                    timeout_otp,
+                    ignore_ids=set(),
+                    since_iso=since_iso,
+                    azpop=azpop,
+                    tmail_wibu=tmail,
                 )
-            else:
-                token = ""
+                ts_fut = pool.submit(
+                    _solve_turnstile,
+                    config,
+                    site_key=params.site_key,
+                    url=SIGNUP_URL,
+                )
+                otp_raw = otp_fut.result(timeout=max(40, timeout_otp + 10))
+                token = ts_fut.result(timeout=max(30, timeout_otp))
 
         if not otp_raw:
             status = "error:protocol_otp_timeout"
@@ -349,10 +352,8 @@ def register_one_protocol(config: dict[str, Any], *, castle: bool = False) -> Pr
                     status = "success_sub2api_fail:unknown"
             except Exception as e:
                 log.exception("[protocol] Sub2API error: %s", e)
-                status = f"success_sub2api_fail:{str(e)[:80]}"
-
         save_account(save_path, email, password, status)
-        if str(status).startswith("added_sub2api"):
+        if str(status).startswith(("added_sub2api", "success")):
             try:
                 from grokreg.reg.flow import push_results_to_gsheet
 

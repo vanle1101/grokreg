@@ -155,7 +155,9 @@ class Sub2APIClient:
         self.api_token = (api_token or "").strip()
         self.email = (email or "").strip()
         self.password = password or ""
-        self.timeout = max(30.0, float(timeout or DEFAULT_TIMEOUT_SEC))
+        self.timeout = max(5.0, float(timeout or DEFAULT_TIMEOUT_SEC))
+        self.connect_timeout = 2.5
+        self.login_read_timeout = 4.0
         self.session = session or requests.Session()
 
     def _login(self) -> tuple[str, float]:
@@ -167,7 +169,7 @@ class Sub2APIClient:
                 url,
                 json={"email": self.email, "password": self.password},
                 headers={"Accept": "application/json", "Content-Type": "application/json"},
-                timeout=min(30.0, self.timeout),
+                timeout=(self.connect_timeout, self.login_read_timeout),
             )
         except requests.RequestException as exc:
             raise Sub2APIError(f"sub2api login request failed: {exc}") from exc
@@ -255,14 +257,15 @@ class Sub2APIClient:
     ) -> Any:
         token = self.resolve_token()
         url = f"{self.base_url}{path}"
-        wait = self.timeout if timeout is None else timeout
+        read_timeout = float(timeout if timeout is not None else self.timeout)
+        req_timeout = (self.connect_timeout, read_timeout)
         try:
             response = self.session.request(
                 method,
                 url,
                 json=body,
                 headers=self._auth_headers(token),
-                timeout=wait,
+                timeout=req_timeout,
             )
         except requests.RequestException as exc:
             raise Sub2APIError(f"sub2api {method} {path} failed: {exc}") from exc
@@ -275,7 +278,7 @@ class Sub2APIClient:
                     url,
                     json=body,
                     headers=self._auth_headers(token),
-                    timeout=wait,
+                    timeout=req_timeout,
                 )
             except requests.RequestException as exc:
                 raise Sub2APIError(f"sub2api {method} {path} failed: {exc}") from exc
@@ -694,6 +697,9 @@ def export_sso_to_sub2api(
                     "[sub2api-api] group name %r not found — import without group_ids",
                     group_name,
                 )
+        except Sub2APIError as e:
+            log.warning("[sub2api-api] resolve group failed: %s", e)
+            raise
         except Exception as e:
             log.warning("[sub2api-api] resolve group failed: %s", e)
 

@@ -74,21 +74,21 @@
             </div>
           </div>
 
-          <!-- New Users Today -->
+          <!-- Total Available Pool Tokens (Replaced Users) -->
           <div class="card p-4">
             <div class="flex items-center gap-3">
               <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
-                <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
+                <Icon name="cube" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
               </div>
               <div>
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.users') }}
+                  Tổng Token Khả Dụng
                 </p>
                 <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                  +{{ stats.today_new_users }}
+                  {{ formatTokens((stats.total_accounts || 0) * 50000) }}
                 </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('common.total') }}: {{ formatNumber(stats.total_users) }}
+                <p class="text-xs text-green-600 dark:text-green-400">
+                  100% Khả dụng (Đầy Pin)
                 </p>
               </div>
             </div>

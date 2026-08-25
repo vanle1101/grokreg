@@ -35,7 +35,7 @@ class CapcutToolPlugin(BaseToolPlugin):
                 type="number",
                 default=1,
                 min=0,
-                max=99,
+                max=1000000,
                 hint="0 = chạy đến khi Stop",
             ),
             ToolField(
@@ -98,12 +98,12 @@ class CapcutToolPlugin(BaseToolPlugin):
             count = int(pool.get("slots") or pool.get("count") or 0)
             if count <= 0:
                 raise RuntimeError("Pool Hotmail trống — import acc trước khi Start")
-            count = min(count, 2000)
+            count = max(0, count)
         else:
             if mail not in ("2", "4"):
                 mail = "4"
             count = int(params.get("count") if params.get("count") is not None else 1)
-            count = max(0, min(99, count))
+            count = max(0, count)
         return [
             str(py),
             "-u",

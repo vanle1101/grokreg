@@ -47,7 +47,7 @@ class CanvaToolPlugin(BaseToolPlugin):
                 type="number",
                 default=1,
                 min=0,
-                max=99,
+                max=1000000,
                 hint="0 = chạy đến khi Stop",
             ),
             ToolField(
@@ -142,12 +142,12 @@ class CanvaToolPlugin(BaseToolPlugin):
             count = int(pool.get("slots") or pool.get("count") or 0)
             if count <= 0:
                 raise RuntimeError("Pool Hotmail trống — import acc trước khi Start")
-            count = min(count, 2000)
+            count = max(0, count)
         else:
             if mail not in ("0", "2", "3", "4"):
                 mail = "1"
             count = int(params.get("count") if params.get("count") is not None else 1)
-            count = max(0, min(99, count))
+            count = max(0, count)
         backend = str(params.get("backend") or "auto").strip().lower()
         if backend not in ("protocol", "auto", "browser"):
             backend = "auto"

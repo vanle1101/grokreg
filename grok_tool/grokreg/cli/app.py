@@ -418,18 +418,17 @@ async def main(argv: list[str] | None = None) -> None:  # noqa: C901
                     except Exception:
                         pass
                     break
+                is_http = backend in ("github", "http", "pure_http", "protocol")
                 if successish:
-                    pause = af.inter_account_cooldown(dmin, dmax)
+                    pause = 0.5 if is_http else af.inter_account_cooldown(dmin, dmax)
                     log.info(
-                        "Inter-success cooldown %.0fs (random %.0f–%.0f) before next account... (ESC=dừng)",
+                        "Inter-success cooldown %.1fs before next account... (ESC=dừng)",
                         pause,
-                        dmin,
-                        dmax,
                     )
                 else:
-                    pause = af.human_delay(max(20.0, dmin * 0.5), dmax)
+                    pause = 1.5 if is_http else af.human_delay(max(3.0, dmin * 0.5), min(dmax, 5.0))
                     log.info(
-                        "Inter-attempt pause %.0fs after non-success... (ESC=dừng)",
+                        "Inter-attempt pause %.1fs before next account... (ESC=dừng)",
                         pause,
                     )
                 try:

@@ -3,7 +3,7 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.24-alpine
+ARG GOLANG_IMAGE=golang:1.26.5-bookworm
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:16-alpine
 
@@ -11,6 +11,7 @@ ARG POSTGRES_IMAGE=postgres:16-alpine
 # Stage 1: Frontend Builder
 # -----------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS frontend-builder
+ENV NODE_OPTIONS="--max-old-space-size=1536"
 WORKDIR /app/frontend
 RUN corepack enable && corepack prepare pnpm@9 --activate
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
@@ -23,7 +24,7 @@ RUN pnpm run build
 # Stage 2: Backend Builder
 # -----------------------------------------------------------------------------
 FROM ${GOLANG_IMAGE} AS backend-builder
-RUN apk add --no-cache git ca-certificates tzdata
+RUN if command -v apk >/dev/null 2>&1; then apk add --no-cache git ca-certificates tzdata; fi
 WORKDIR /app/backend
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download

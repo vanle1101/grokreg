@@ -2107,7 +2107,7 @@ async def add_grok_to_sub2api(
     fallback = cfg.get("fallback_browser_oauth")
     if fallback is None:
         fallback = True
-    if mode == "browser_oauth" or (mode == "auto" and fallback):
+    if browser is not None and (mode == "browser_oauth" or (mode == "auto" and fallback)):
         log.info("[sub2api] mode=%s → browser OAuth name=%s", mode, name)
         # If SSO path already consumed the name counter, reuse same name
         result = await add_grok_via_browser_oauth(
