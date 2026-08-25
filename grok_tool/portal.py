@@ -379,13 +379,17 @@ if (-not $apiKey) {{
 }}
 
 Write-Host "[..] Dang thiet lap bien moi truong he thong Windows..." -ForegroundColor Gray
+[System.Environment]::SetEnvironmentVariable('GROK_DEPLOYMENT_KEY', $apiKey, 'User')
 [System.Environment]::SetEnvironmentVariable('OPENAI_BASE_URL', $baseUrl, 'User')
 [System.Environment]::SetEnvironmentVariable('OPENAI_API_KEY', $apiKey, 'User')
 [System.Environment]::SetEnvironmentVariable('CODEX_API_KEY', $apiKey, 'User')
 [System.Environment]::SetEnvironmentVariable('XAI_BASE_URL', $baseUrl, 'User')
 [System.Environment]::SetEnvironmentVariable('XAI_API_KEY', $apiKey, 'User')
+$env:GROK_DEPLOYMENT_KEY = $apiKey
 $env:OPENAI_BASE_URL = $baseUrl
 $env:OPENAI_API_KEY = $apiKey
+$env:XAI_BASE_URL = $baseUrl
+$env:XAI_API_KEY = $apiKey
 Write-Host "[OK] Da thiet lap API Gateway thanh cong!" -ForegroundColor Green
 Write-Host "[OK] Da luu API Key vao he thong Windows thanh cong!" -ForegroundColor Green
 
