@@ -310,12 +310,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <button class="copy-btn" onclick="copyFromElem('cmd-linux', this)">📋 Copy</button>
               </div>
               <p style="font-size:11px; color:var(--muted); margin-top:6px;">Cài đúng Grok 4.6 và tạo đủ 3 profile. Sau khi chạy: đóng hẳn app, mở lại và tạo thread mới.</p>
-              <div style="margin-top:14px; padding:12px 14px; border:1px solid rgba(56,189,248,0.22); border-radius:10px; background:rgba(56,189,248,0.05); font-size:12px; line-height:1.7; color:var(--muted);">
-                <div style="font-weight:800; color:#fff; margin-bottom:4px;">📖 Hướng dẫn dùng Grok Build bằng API</div>
-                <div><b style="color:#38bdf8;">1.</b> Windows: chạy lệnh PowerShell ở trên. Nếu dùng Ubuntu/WSL, chạy lệnh Linux ở trên.</div>
-                <div><b style="color:#38bdf8;">2.</b> Đóng terminal Grok cũ, mở terminal mới để nhận biến môi trường API.</div>
-                <div><b style="color:#38bdf8;">3.</b> Gõ <code style="color:#fff;">grok -m sub2api-grok</code>. Chế độ đã chọn là mặc định; có thể đổi bằng <code style="color:#fff;">/effort low|medium|high</code>.</div>
-                <div style="margin-top:4px; color:#94a3b8;">Không cần đăng nhập tài khoản Grok/OAuth. File local vẫn đọc được khi yêu cầu rõ tên file.</div>
+              <div style="margin-top:14px; padding:13px 15px; border:1px solid rgba(56,189,248,0.22); border-radius:10px; background:rgba(56,189,248,0.05); font-size:12px; line-height:1.75; color:var(--muted);">
+                <div style="font-weight:800; color:#fff; margin-bottom:6px;">📖 Cách dùng Grok Build bằng API (3 bước)</div>
+                <div><b style="color:#38bdf8;">Bước 1 — Chọn đúng lệnh:</b></div>
+                <div style="margin-left:12px;">• Dùng Windows PowerShell: copy <b style="color:#fff;">lệnh Windows</b> ở phía trên rồi dán vào PowerShell.</div>
+                <div style="margin-left:12px;">• Dùng Ubuntu/WSL: copy <b style="color:#fff;">lệnh Linux</b> ở phía trên rồi dán vào WSL.</div>
+                <div style="margin-top:4px;"><b style="color:#38bdf8;">Bước 2 — Mở lại terminal:</b> chờ cài xong, đóng terminal Grok đang mở và mở một terminal mới.</div>
+                <div style="margin-top:4px;"><b style="color:#38bdf8;">Bước 3 — Khởi chạy:</b> gõ <code style="color:#fff; background:rgba(0,0,0,.3); padding:2px 5px; border-radius:4px;">grok -m sub2api-grok</code> rồi Enter.</div>
+                <div style="margin-top:4px;"><b style="color:#38bdf8;">Đổi tốc độ (nếu muốn):</b> trong Grok gõ từng lệnh <code style="color:#fff; background:rgba(0,0,0,.3); padding:2px 5px; border-radius:4px;">/effort low</code> (nhanh), <code style="color:#fff; background:rgba(0,0,0,.3); padding:2px 5px; border-radius:4px;">/effort medium</code> (cân bằng), hoặc <code style="color:#fff; background:rgba(0,0,0,.3); padding:2px 5px; border-radius:4px;">/effort high</code> (suy luận sâu).</div>
+                <div style="margin-top:5px; color:#94a3b8;">Không cần đăng nhập tài khoản Grok/OAuth. Muốn đọc file, nói rõ tên file cần đọc.</div>
               </div>
             </div>
           </div>
