@@ -7,6 +7,7 @@ Port: 8082
 import http.server
 import json
 import os
+import re
 import subprocess
 import urllib.parse
 from datetime import datetime
@@ -15,6 +16,12 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 PORT = 8082
 BASE_URL = "https://grokapi.duckdns.org/v1"
 USD_TO_VND = 25600.0
+API_KEY_RE = re.compile(r"sk-[A-Za-z0-9_+=-]{16,256}")
+
+
+def is_valid_api_key(api_key: str) -> bool:
+    """Only allow key characters that are safe in generated shell scripts and SQL."""
+    return bool(API_KEY_RE.fullmatch(api_key.strip()))
 
 def format_ts(ts_str: str) -> str:
     if not ts_str:
@@ -28,7 +35,7 @@ def format_ts(ts_str: str) -> str:
 
 def query_key_info(api_key: str) -> dict:
     clean_key = api_key.strip()
-    if not clean_key.startswith("sk-"):
+    if not is_valid_api_key(clean_key):
         return {"ok": False, "error": "API Key không hợp lệ (phải bắt đầu bằng sk-)"}
     
     # 1. Query Key Info from Postgres
@@ -263,7 +270,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
               <div style="font-size:12px; font-weight:700; color:#38bdf8; margin-bottom:6px;">⚡ Lệnh 1-Click Cài Đặt Cho Windows (PowerShell / Codex App):</div>
               <div class="code-box">
-                <span id="cmd-win">irm "https://grokapi.duckdns.org/setup-codex-windows?key=${d.full_key}" | iex</span>
+                <span id="cmd-win">irm "https://grokapi.duckdns.org/setup-windows?key=${encodeURIComponent(d.full_key)}" | iex</span>
                 <button class="copy-btn" onclick="copyFromElem('cmd-win', this)">📋 Copy</button>
               </div>
             </div>
@@ -272,10 +279,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div style="margin-top:14px;">
               <div style="font-size:12px; font-weight:700; color:#10b981; margin-bottom:6px;">🐧 Lệnh 1-Click Cài Đặt Cho Linux / macOS (Terminal):</div>
               <div class="code-box" style="border-color:rgba(16,185,129,0.3); color:#34d399;">
-                <span id="cmd-linux">curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${d.full_key}" | bash</span>
+                <span id="cmd-linux">curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${encodeURIComponent(d.full_key)}" | bash</span>
                 <button class="copy-btn" onclick="copyFromElem('cmd-linux', this)">📋 Copy</button>
               </div>
-              <p style="font-size:11px; color:var(--muted); margin-top:6px;">Tự động cấu hình <code>~/.codex/config.toml</code> + lưu biến môi trường <code>~/.bashrc</code> và <code>~/.zshrc</code>.</p>
+              <p style="font-size:11px; color:var(--muted); margin-top:6px;">Tự động cấu hình Codex + Grok Build, giữ nguyên plugin/MCP hiện có và lưu key vào biến môi trường.</p>
             </div>
           </div>
 
@@ -359,7 +366,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
-def generate_codex_ps_script(key: str, default_model: str, small_model: str, medium_model: str, large_model: str) -> str:
+def generate_codex_ps_script_legacy(key: str, default_model: str, small_model: str, medium_model: str, large_model: str) -> str:
     base = BASE_URL
     return f"""# Grok API & Codex App 1-Click Auto Setup Script (Windows PowerShell)
 Write-Host "============================================================" -ForegroundColor Cyan
@@ -504,7 +511,7 @@ Write-Host "============================================================" -Foreg
 Write-Host "🎉 CAI DAT HOAN TAT 100%! Ban co the mo Codex Desktop App hoac Chatbot ngay!" -ForegroundColor Yellow
 """
 
-def generate_codex_bash_script(key: str, default_model: str, small_model: str, medium_model: str, large_model: str) -> str:
+def generate_codex_bash_script_legacy(key: str, default_model: str, small_model: str, medium_model: str, large_model: str) -> str:
     base = BASE_URL
     return f"""#!/usr/bin/env bash
 # Grok API & Codex 1-Click Auto Setup Script for Linux / macOS
@@ -619,6 +626,255 @@ echo -e "\\033[1;37m👉 De ap dung ngay, go lenh: \\033[1;32msource ~/.bashrc\\
 echo -e "\\033[1;37m👉 Mo Grok Build TUI bang cach go chu: \\033[1;32mgrok\\033[0m"
 """
 
+def generate_codex_ps_script(key: str) -> str:
+    """Generate the Windows installer without overwriting existing Codex/Grok settings."""
+    template = r'''# Grok API one-click setup for Codex App + official Grok Build
+$ErrorActionPreference = "Stop"
+$apiKey = "__API_KEY__"
+$baseUrl = "__BASE_URL__"
+$model = "grok-4.6"
+
+Write-Host "Grok API - Codex App + Grok Build setup" -ForegroundColor Cyan
+if ($apiKey -notmatch '^sk-[A-Za-z0-9_+=-]{16,256}$') {
+    throw "API key khong hop le."
+}
+
+# Verify the key without spending completion tokens.
+try {
+    $headers = @{ Authorization = "Bearer $apiKey" }
+    Invoke-RestMethod -Uri "$baseUrl/models" -Headers $headers -Method Get -TimeoutSec 20 | Out-Null
+    Write-Host "[OK] API key va Base URL hop le." -ForegroundColor Green
+} catch {
+    throw "Khong xac thuc duoc API key: $($_.Exception.Message)"
+}
+
+[Environment]::SetEnvironmentVariable("SUB2API_API_KEY", $apiKey, "User")
+$env:SUB2API_API_KEY = $apiKey
+
+function Write-Utf8NoBom([string]$Path, [string]$Content) {
+    [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
+}
+
+function Update-CodexConfig([string]$Path) {
+    $content = if (Test-Path -LiteralPath $Path) { [IO.File]::ReadAllText($Path) } else { "" }
+    $content = [regex]::Replace(
+        $content,
+        '(?ms)^\s*\[model_providers\.grokapi\]\s*\r?\n.*?(?=^\s*\[|\z)',
+        ''
+    )
+
+    $section = [regex]::Match($content, '(?m)^\s*\[')
+    if ($section.Success) {
+        $head = $content.Substring(0, $section.Index)
+        $tail = $content.Substring($section.Index)
+    } else {
+        $head = $content
+        $tail = ""
+    }
+
+    $managedKeys = '^(model|model_provider|model_reasoning_effort|model_verbosity|model_context_window)\s*='
+    $keptHead = @($head -split '\r?\n' | Where-Object { $_ -notmatch $managedKeys }) -join "`n"
+    $prefix = @"
+model = "$model"
+model_provider = "grokapi"
+model_reasoning_effort = "low"
+model_verbosity = "low"
+model_context_window = 500000
+"@
+    $provider = @"
+
+[model_providers.grokapi]
+name = "Grok API"
+base_url = "$baseUrl"
+env_key = "SUB2API_API_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+request_max_retries = 2
+stream_max_retries = 2
+"@
+    $updated = $prefix.Trim() + "`n"
+    if ($keptHead.Trim()) { $updated += $keptHead.Trim() + "`n" }
+    if ($tail.Trim()) { $updated += "`n" + $tail.Trim() + "`n" }
+    $updated += $provider
+    Write-Utf8NoBom $Path ($updated.Trim() + "`n")
+}
+
+function Update-GrokConfig([string]$Path) {
+    $content = if (Test-Path -LiteralPath $Path) { [IO.File]::ReadAllText($Path) } else { "" }
+    $content = [regex]::Replace(
+        $content,
+        '(?ms)^\s*\[model\."sub2api-grok"\]\s*\r?\n.*?(?=^\s*\[|\z)',
+        ''
+    )
+
+    $modelsPattern = '(?ms)^\s*\[models\]\s*\r?\n.*?(?=^\s*\[|\z)'
+    if ([regex]::IsMatch($content, $modelsPattern)) {
+        $content = [regex]::Replace($content, $modelsPattern, {
+            param($match)
+            $body = [regex]::Replace($match.Value, '(?m)^\s*default\s*=.*\r?\n?', '')
+            $body = [regex]::Replace($body, '^\s*\[models\]\s*\r?\n?', '')
+            return "[models]`ndefault = `"sub2api-grok`"`n" + $body.Trim() + "`n`n"
+        })
+    } else {
+        $content = "[models]`ndefault = `"sub2api-grok`"`n`n" + $content.Trim()
+    }
+
+    $customModel = @"
+
+[model."sub2api-grok"]
+model = "$model"
+base_url = "$baseUrl"
+name = "Grok 4.6 via API"
+description = "Grok 4.6 through grokapi.duckdns.org"
+env_key = "SUB2API_API_KEY"
+api_backend = "responses"
+context_window = 500000
+max_completion_tokens = 8192
+"@
+    Write-Utf8NoBom $Path ($content.Trim() + $customModel + "`n")
+}
+
+$codexDir = Join-Path $env:USERPROFILE ".codex"
+$grokDir = Join-Path $env:USERPROFILE ".grok"
+[IO.Directory]::CreateDirectory($codexDir) | Out-Null
+[IO.Directory]::CreateDirectory($grokDir) | Out-Null
+Update-CodexConfig (Join-Path $codexDir "config.toml")
+Update-GrokConfig (Join-Path $grokDir "config.toml")
+Write-Host "[OK] Da cau hinh Codex App -> grok-4.6." -ForegroundColor Green
+Write-Host "[OK] Da cau hinh Grok Build -> sub2api-grok." -ForegroundColor Green
+
+if (-not (Get-Command grok -ErrorAction SilentlyContinue)) {
+    if (Get-Command npm -ErrorAction SilentlyContinue) {
+        Write-Host "[..] Dang cai Grok Build chinh thuc tu xAI..." -ForegroundColor Yellow
+        npm install -g @xai-official/grok
+    } else {
+        Write-Warning "Chua co Grok Build va npm. Hay cai Node.js 22+, sau do chay: npm install -g @xai-official/grok"
+    }
+}
+
+Write-Host "`nHOAN TAT." -ForegroundColor Cyan
+Write-Host "- Dong/mo lai Codex App, tao task moi."
+Write-Host "- Mo terminal moi va chay: grok inspect"
+Write-Host "- Sau do chay: grok"
+'''
+    return template.replace("__API_KEY__", key).replace("__BASE_URL__", BASE_URL)
+
+
+def generate_codex_bash_script(key: str) -> str:
+    """Generate the Linux/WSL installer and preserve unrelated TOML/shell settings."""
+    template = r'''#!/usr/bin/env bash
+set -euo pipefail
+
+API_KEY='__API_KEY__'
+BASE_URL='__BASE_URL__'
+MODEL='grok-4.6'
+export SUB2API_API_KEY="$API_KEY"
+
+case "$API_KEY" in
+  sk-*) ;;
+  *) echo "API key khong hop le." >&2; exit 1 ;;
+esac
+
+echo "Grok API - Codex + Grok Build setup"
+curl -fsS --max-time 20 -H "Authorization: Bearer $API_KEY" "$BASE_URL/models" >/dev/null
+echo "[OK] API key va Base URL hop le."
+
+mkdir -p "$HOME/.config/grokapi" "$HOME/.codex" "$HOME/.grok"
+ENV_FILE="$HOME/.config/grokapi/env"
+printf 'export SUB2API_API_KEY=%q\n' "$API_KEY" > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+  [ -e "$rc" ] || touch "$rc"
+  sed '/# BEGIN GROKAPI/,/# END GROKAPI/d' "$rc" > "$rc.grokapi.tmp"
+  mv "$rc.grokapi.tmp" "$rc"
+  printf '\n# BEGIN GROKAPI\n[ -f "$HOME/.config/grokapi/env" ] && . "$HOME/.config/grokapi/env"\n# END GROKAPI\n' >> "$rc"
+done
+
+command -v python3 >/dev/null 2>&1 || {
+  echo "Can python3 de giu nguyen cau hinh TOML hien co." >&2
+  exit 1
+}
+
+python3 - "$HOME/.codex/config.toml" "$HOME/.grok/config.toml" "$BASE_URL" "$MODEL" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+codex_path, grok_path, base_url, model = sys.argv[1:]
+
+def read(path):
+    p = Path(path)
+    return p.read_text(encoding="utf-8") if p.exists() else ""
+
+def write(path, text):
+    Path(path).write_text(text.rstrip() + "\n", encoding="utf-8")
+
+codex = read(codex_path)
+codex = re.sub(r'(?ms)^\s*\[model_providers\.grokapi\]\s*\n.*?(?=^\s*\[|\Z)', '', codex)
+match = re.search(r'(?m)^\s*\[', codex)
+head, tail = (codex[:match.start()], codex[match.start():]) if match else (codex, '')
+managed = re.compile(r'^\s*(model|model_provider|model_reasoning_effort|model_verbosity|model_context_window)\s*=')
+head = '\n'.join(line for line in head.splitlines() if not managed.match(line)).strip()
+prefix = f"""model = "{model}"
+model_provider = "grokapi"
+model_reasoning_effort = "low"
+model_verbosity = "low"
+model_context_window = 500000"""
+provider = f"""[model_providers.grokapi]
+name = "Grok API"
+base_url = "{base_url}"
+env_key = "SUB2API_API_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+request_max_retries = 2
+stream_max_retries = 2"""
+write(codex_path, '\n\n'.join(part for part in (prefix, head, tail.strip(), provider) if part))
+
+grok = read(grok_path)
+grok = re.sub(r'(?ms)^\s*\[model\."sub2api-grok"\]\s*\n.*?(?=^\s*\[|\Z)', '', grok)
+models_re = re.compile(r'(?ms)^\s*\[models\]\s*\n.*?(?=^\s*\[|\Z)')
+models_match = models_re.search(grok)
+if models_match:
+    block = re.sub(r'(?m)^\s*default\s*=.*\n?', '', models_match.group(0))
+    block = re.sub(r'^\s*\[models\]\s*\n?', '', block).strip()
+    replacement = '[models]\ndefault = "sub2api-grok"\n' + (block + '\n' if block else '') + '\n'
+    grok = grok[:models_match.start()] + replacement + grok[models_match.end():]
+else:
+    grok = '[models]\ndefault = "sub2api-grok"\n\n' + grok
+custom = f"""[model."sub2api-grok"]
+model = "{model}"
+base_url = "{base_url}"
+name = "Grok 4.6 via API"
+description = "Grok 4.6 through grokapi.duckdns.org"
+env_key = "SUB2API_API_KEY"
+api_backend = "responses"
+context_window = 500000
+max_completion_tokens = 8192"""
+write(grok_path, grok.rstrip() + '\n\n' + custom)
+PY
+
+echo "[OK] Da cau hinh Codex + Grok Build."
+
+if ! command -v grok >/dev/null 2>&1; then
+  echo "[..] Dang cai Grok Build chinh thuc tu xAI..."
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  curl -fsSL https://x.ai/cli/install.sh -o "$installer"
+  bash "$installer"
+  rm -f "$installer"
+  trap - EXIT
+fi
+
+echo
+echo "HOAN TAT. Mo terminal moi, chay: grok inspect"
+echo "Sau do chay: grok"
+'''
+    return template.replace("__API_KEY__", key).replace("__BASE_URL__", BASE_URL)
+
+
 class PortalHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -643,29 +899,37 @@ class PortalHandler(BaseHTTPRequestHandler):
             return
 
         if path in ("/setup-windows", "/setup-codex-windows", "/api/v1/setup-codex-windows"):
-            key = qs.get("key", [""])[0]
-            model = qs.get("model", ["grok-4.6"])[0]
-            small = qs.get("small", ["grok-4.6"])[0]
-            medium = qs.get("medium", ["grok-4.6"])[0]
-            large = qs.get("large", ["grok-4.6"])[0]
-            
-            ps_script = generate_codex_ps_script(key, model, small, medium, large)
+            key = qs.get("key", [""])[0].strip()
+            if not is_valid_api_key(key):
+                self.send_response(400)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(b"Invalid API key")
+                return
+
+            ps_script = generate_codex_ps_script(key)
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Type", "text/x-powershell; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(ps_script.encode("utf-8"))
             return
 
         if path in ("/setup-linux", "/setup-codex-linux", "/api/v1/setup-codex-linux", "/setup-mac"):
-            key = qs.get("key", [""])[0]
-            model = qs.get("model", ["grok-4.6"])[0]
-            small = qs.get("small", ["grok-4.6"])[0]
-            medium = qs.get("medium", ["grok-4.6"])[0]
-            large = qs.get("large", ["grok-4.6"])[0]
-            
-            bash_script = generate_codex_bash_script(key, model, small, medium, large)
+            key = qs.get("key", [""])[0].strip()
+            if not is_valid_api_key(key):
+                self.send_response(400)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(b"Invalid API key")
+                return
+
+            bash_script = generate_codex_bash_script(key)
             self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Type", "text/x-shellscript; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(bash_script.encode("utf-8"))
             return
