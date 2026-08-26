@@ -310,6 +310,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <button class="copy-btn" onclick="copyFromElem('cmd-linux', this)">📋 Copy</button>
               </div>
               <p style="font-size:11px; color:var(--muted); margin-top:6px;">Cài đúng Grok 4.6 và tạo đủ 3 profile. Sau khi chạy: đóng hẳn app, mở lại và tạo thread mới.</p>
+              <div style="margin-top:14px; padding:12px 14px; border:1px solid rgba(56,189,248,0.22); border-radius:10px; background:rgba(56,189,248,0.05); font-size:12px; line-height:1.7; color:var(--muted);">
+                <div style="font-weight:800; color:#fff; margin-bottom:4px;">📖 Hướng dẫn dùng Grok Build bằng API</div>
+                <div><b style="color:#38bdf8;">1.</b> Windows: chạy lệnh PowerShell ở trên. Nếu dùng Ubuntu/WSL, chạy lệnh Linux ở trên.</div>
+                <div><b style="color:#38bdf8;">2.</b> Đóng terminal Grok cũ, mở terminal mới để nhận biến môi trường API.</div>
+                <div><b style="color:#38bdf8;">3.</b> Gõ <code style="color:#fff;">grok -m sub2api-grok</code>. Chế độ đã chọn là mặc định; có thể đổi bằng <code style="color:#fff;">/effort low|medium|high</code>.</div>
+                <div style="margin-top:4px; color:#94a3b8;">Không cần đăng nhập tài khoản Grok/OAuth. File local vẫn đọc được khi yêu cầu rõ tên file.</div>
+              </div>
             </div>
           </div>
 
