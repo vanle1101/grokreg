@@ -433,6 +433,15 @@ async function renderRegister(root) {
   try {
     if (tool.status === 'ready') stats = await getToolStats(tool.id);
   } catch (_) {}
+  if (tool.id === 'grok') {
+    try {
+      const live = await fetch('/api/sub2api/pool/stats').then((r) => r.json());
+      if (live?.connected) {
+        stats.sub2api_live_total = live.total_accounts;
+        stats.sub2api_live_active = live.active_accounts;
+      }
+    } catch (_) {}
+  }
   if (['grok', 'heygen', 'capcut', 'zai', 'canva'].includes(tool.id)) {
     try {
       state.hotmailPool = await getHotmails(tool.id);
@@ -470,10 +479,10 @@ async function renderRegister(root) {
           <div class="stat-value">${stats.success ?? '—'}</div>
           <div class="card-sub" style="margin-top:4px">tab ${esc(tool.id)}</div>
         </div>` : `
-        <div class="stat-card" title="Đã import Sub2API (added_sub2api)">
+        <div class="stat-card" title="Database Sub2API live; email unique đã đối chiếu: ${stats.sub2api ?? 0}">
           <div class="stat-label">Sub2API OK</div>
-          <div class="stat-value">${stats.sub2api ?? '—'}</div>
-          <div class="card-sub" style="margin-top:4px">trong ${stats.success ?? 0} reg OK</div>
+          <div class="stat-value">${stats.sub2api_live_total ?? stats.sub2api ?? '—'}</div>
+          <div class="card-sub" style="margin-top:4px">${stats.sub2api ?? 0} email unique · ${stats.sub2api_live_active ?? '—'} active</div>
         </div>`}
         <div class="stat-card bad" title="error* lần status cuối mỗi email">
           <div class="stat-label">Fail</div>
@@ -978,6 +987,13 @@ async function renderResults(root) {
     const r = await getToolResults(toolId, 150);
     rows = r.results || [];
     stats = await getToolStats(toolId);
+    if (toolId === 'grok') {
+      const live = await fetch('/api/sub2api/pool/stats').then((r) => r.json()).catch(() => null);
+      if (live?.connected) {
+        stats.sub2api_live_total = live.total_accounts;
+        stats.sub2api_live_active = live.active_accounts;
+      }
+    }
   } catch (e) {
     /* ignore fetch error */
   }
@@ -993,7 +1009,7 @@ async function renderResults(root) {
           <div class="card-sub" style="margin-top:4px">${stats.attempts ?? 0} lượt thử</div></div>
         <div class="stat-card ok"><div class="stat-label">Reg OK</div><div class="stat-value">${stats.success ?? 0}</div>
           <div class="card-sub" style="margin-top:4px">${isSheetOnly(toolId) ? 'không Sub2 — chỉ sheet' : `reg-only ${stats.reg_only ?? 0} · sub2 fail ${stats.sub2_fail ?? 0}`}</div></div>
-        <div class="stat-card"><div class="stat-label">${isSheetOnly(toolId) ? `Sheet ${esc(toolId)}` : 'Sub2API OK'}</div><div class="stat-value">${isSheetOnly(toolId) ? (stats.success ?? 0) : (stats.sub2api ?? 0)}</div></div>
+        <div class="stat-card"><div class="stat-label">${isSheetOnly(toolId) ? `Sheet ${esc(toolId)}` : 'Sub2API OK'}</div><div class="stat-value">${isSheetOnly(toolId) ? (stats.success ?? 0) : (stats.sub2api_live_total ?? stats.sub2api ?? 0)}</div>${!isSheetOnly(toolId) ? `<div class="card-sub" style="margin-top:4px">${stats.sub2api ?? 0} email unique · ${stats.sub2api_live_active ?? '—'} active</div>` : ''}</div>
         <div class="stat-card bad"><div class="stat-label">Fail</div><div class="stat-value">${stats.fail ?? 0}</div>
           <div class="card-sub" style="margin-top:4px">pending ${stats.pending ?? 0}</div></div>
       </div>

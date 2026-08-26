@@ -76,19 +76,23 @@ def parse_old_accounts(*, include_reg_only: bool = False) -> list[tuple[str, str
         name = m.group(1).strip() if m else ""
         eligible = "added_sub2api" in sl or (
             include_reg_only
-            and (sl == "success" or sl.startswith("success_not_logged"))
+            and (
+                sl == "success"
+                or sl.startswith("success_not_logged")
+                or sl.startswith("success_sub2api_fail")
+            )
         )
         latest[email.lower()] = (email, password, name) if eligible else ("", "", "")
     return [row for row in latest.values() if row[0]]
 
 
-def live_account_emails(client) -> set[str]:
-    """Fetch all live Grok account credential emails once, without logging secrets."""
+def live_account_email_names(client) -> tuple[dict[str, str], int]:
+    """Return live Grok email→name plus raw DB record count."""
     first = client._request_json(
         "GET", "/api/v1/admin/accounts?page=1&page_size=100&platform=grok"
     )
     if not isinstance(first, dict):
-        return set()
+        return {}, 0
     items = list(first.get("items") or [])
     pages = max(1, int(first.get("pages") or 1))
     for page in range(2, pages + 1):
@@ -98,11 +102,20 @@ def live_account_emails(client) -> set[str]:
         )
         if isinstance(data, dict):
             items.extend(data.get("items") or [])
-    return {
-        str((acc.get("credentials") or {}).get("email") or "").strip().lower()
-        for acc in items
-        if isinstance(acc, dict)
-    }
+    names: dict[str, str] = {}
+    for acc in items:
+        if not isinstance(acc, dict):
+            continue
+        email = str((acc.get("credentials") or {}).get("email") or "").strip().lower()
+        if email:
+            names[email] = str(acc.get("name") or email).strip()
+    return names, int(first.get("total") or len(items))
+
+
+def live_account_emails(client) -> set[str]:
+    """Compatibility helper used by verification scripts."""
+    names, _ = live_account_email_names(client)
+    return set(names)
 
 
 def mark_ledger_added(email: str, password: str, name: str) -> None:
@@ -232,6 +245,11 @@ async def main() -> int:
         help="Also reauth latest success/reg-only rows that have no stored SSO",
     )
     parser.add_argument("--limit", type=int, default=0, help="Maximum missing rows this run")
+    parser.add_argument(
+        "--reconcile-only",
+        action="store_true",
+        help="Update local ledger for accounts already present in live Sub2API",
+    )
     args = parser.parse_args()
 
     config = load_config()
@@ -256,18 +274,24 @@ async def main() -> int:
 
     accounts = parse_old_accounts(include_reg_only=args.reg_only)
     done = load_done()
-    live_emails = live_account_emails(client)
+    live_names, live_total = live_account_email_names(client)
+    live_emails = set(live_names)
     log.info(
-        "ledger eligible=%s live_emails=%s already_logged=%s reg_only=%s",
+        "ledger eligible=%s live_unique=%s live_records=%s already_logged=%s reg_only=%s",
         len(accounts),
         len(live_emails),
+        live_total,
         len(done),
         args.reg_only,
     )
 
     todo = []
+    reconciled = 0
     for email, password, name in accounts:
         if email.lower() in live_emails:
+            if not name:
+                mark_ledger_added(email, password, live_names[email.lower()])
+                reconciled += 1
             continue
         if email.lower() in done:
             continue
@@ -276,6 +300,9 @@ async def main() -> int:
             done.add(email.lower())
             continue
         todo.append((email, password, name))
+    log.info("ledger reconciled from live Sub2API: %s", reconciled)
+    if args.reconcile_only:
+        return 0
     if args.limit > 0:
         todo = todo[: args.limit]
     log.info("to import: %s", len(todo))

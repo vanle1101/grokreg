@@ -17,6 +17,17 @@ PORT = 8082
 BASE_URL = "https://grokapi.duckdns.org/v1"
 USD_TO_VND = 25600.0
 API_KEY_RE = re.compile(r"sk-[A-Za-z0-9_+=-]{16,256}")
+SETUP_MODES = {
+    "fast": {"effort": "low", "summary": "none", "verbosity": "low", "idle_timeout_ms": "60000", "max_completion_tokens": "4096"},
+    "smart": {"effort": "medium", "summary": "auto", "verbosity": "medium", "idle_timeout_ms": "120000", "max_completion_tokens": "8192"},
+    "thinking": {"effort": "high", "summary": "auto", "verbosity": "medium", "idle_timeout_ms": "300000", "max_completion_tokens": "16384"},
+}
+
+
+def normalize_setup_mode(mode: str) -> str:
+    """Return a supported customer mode; Smart is the safe default."""
+    normalized = (mode or "").strip().lower()
+    return normalized if normalized in SETUP_MODES else "smart"
 
 
 def is_valid_api_key(api_key: str) -> bool:
@@ -156,6 +167,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .code-box { background: rgba(0,0,0,0.6); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 12px 95px 12px 14px; font-family: monospace; font-size: 12px; color: #38bdf8; word-break: break-all; margin-top: 8px; position: relative; }
     .copy-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); padding: 6px 12px; font-size: 11.5px; font-weight: 700; background: #2563eb; border: none; border-radius: 6px; color: #fff; cursor: pointer; transition: all 0.2s; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
     .copy-btn:hover { background: var(--primary); }
+    .mode-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .mode-btn { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 9px; color: var(--muted); padding: 9px 7px; cursor: pointer; font-size: 11.5px; font-weight: 700; }
+    .mode-btn.active { color: #fff; border-color: var(--accent); background: rgba(56,189,248,0.14); }
     .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; }
     .badge-active { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid #10b981; }
     .badge-exhausted { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid #ef4444; }
@@ -196,7 +210,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div style="font-size: 13px; line-height: 1.8; color: var(--muted);">
         <div>🌐 <b>Base URL:</b> <code style="color: #fff;">https://grokapi.duckdns.org/v1</code></div>
         <div>🤖 <b>Model:</b> <code style="color: #38bdf8;">grok-4.6</code>, <code style="color: #38bdf8;">grok-4.5</code>, <code style="color: #38bdf8;">grok-2</code></div>
-        <div>⚡ <b>Tương thích:</b> 100% Codex Desktop App, Chatbox, NextChat, Cursor, VS Code, Dify...</div>
+        <div>⚡ <b>Tương thích:</b> Codex App/CLI, Grok Build và client OpenAI-compatible.</div>
+        <div>📁 <b>Đọc file:</b> Codex/Grok Build đọc file trong workspace; hãy nói rõ tên file cần đọc.</div>
+        <div>🎚️ <b>3 chế độ:</b> Fast / Smart / Thinking đều dùng đúng <code style="color:#38bdf8;">grok-4.6</code>; chỉ thay mức suy luận.</div>
       </div>
     </div>
   </div>
@@ -266,11 +282,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
               <div class="battery-fill" style="width: ${d.remain_pct}%; background:${pctColor};"></div>
             </div>
 
-            <!-- Windows 1-Click Command -->
+            <!-- Install mode -->
             <div style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
+              <div style="font-size:12px; font-weight:700; color:#fff;">🎚️ Chọn chế độ mặc định:</div>
+              <div class="mode-row">
+                <button id="mode-fast" class="mode-btn" onclick="setInstallMode('fast', '${d.full_key}')">⚡ Fast<br><small>nhanh, tiết kiệm</small></button>
+                <button id="mode-smart" class="mode-btn active" onclick="setInstallMode('smart', '${d.full_key}')">🧠 Smart<br><small>cân bằng, đề xuất</small></button>
+                <button id="mode-thinking" class="mode-btn" onclick="setInstallMode('thinking', '${d.full_key}')">🔬 Thinking<br><small>suy luận sâu</small></button>
+              </div>
+              <p id="mode-note" style="font-size:11px; color:var(--muted); margin-top:7px;">Smart: cân bằng tốc độ và chất lượng cho sử dụng hằng ngày.</p>
+            </div>
+
+            <!-- Windows 1-Click Command -->
+            <div style="margin-top:16px;">
               <div style="font-size:12px; font-weight:700; color:#38bdf8; margin-bottom:6px;">⚡ Lệnh 1-Click Cài Đặt Cho Windows (PowerShell / Codex App):</div>
               <div class="code-box">
-                <span id="cmd-win">irm "https://grokapi.duckdns.org/setup-windows?key=${encodeURIComponent(d.full_key)}" | iex</span>
+                <span id="cmd-win">irm "https://grokapi.duckdns.org/setup-windows?key=${encodeURIComponent(d.full_key)}&mode=smart" | iex</span>
                 <button class="copy-btn" onclick="copyFromElem('cmd-win', this)">📋 Copy</button>
               </div>
             </div>
@@ -279,10 +306,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div style="margin-top:14px;">
               <div style="font-size:12px; font-weight:700; color:#10b981; margin-bottom:6px;">🐧 Lệnh 1-Click Cài Đặt Cho Linux / macOS (Terminal):</div>
               <div class="code-box" style="border-color:rgba(16,185,129,0.3); color:#34d399;">
-                <span id="cmd-linux">curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${encodeURIComponent(d.full_key)}" | bash</span>
+                <span id="cmd-linux">curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${encodeURIComponent(d.full_key)}&mode=smart" | bash</span>
                 <button class="copy-btn" onclick="copyFromElem('cmd-linux', this)">📋 Copy</button>
               </div>
-              <p style="font-size:11px; color:var(--muted); margin-top:6px;">Tự động cấu hình Codex + Grok Build, giữ nguyên plugin/MCP hiện có và lưu key vào biến môi trường.</p>
+              <p style="font-size:11px; color:var(--muted); margin-top:6px;">Cài đúng Grok 4.6 và tạo đủ 3 profile. Sau khi chạy: đóng hẳn app, mở lại và tạo thread mới.</p>
             </div>
           </div>
 
@@ -360,6 +387,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           btn.style.color = '';
         }, 2000);
       }
+    }
+
+    function setInstallMode(mode, key) {
+      const notes = {
+        fast: 'Fast: phản hồi nhanh, ít reasoning, phù hợp chat và tác vụ đơn giản.',
+        smart: 'Smart: cân bằng tốc độ và chất lượng cho sử dụng hằng ngày.',
+        thinking: 'Thinking: reasoning cao cho bài khó; sẽ chậm và tốn token hơn.'
+      };
+      ['fast', 'smart', 'thinking'].forEach(m => {
+        const btn = document.getElementById('mode-' + m);
+        if (btn) btn.classList.toggle('active', m === mode);
+      });
+      document.getElementById('mode-note').textContent = notes[mode];
+      const encodedKey = encodeURIComponent(key);
+      document.getElementById('cmd-win').textContent = `irm "https://grokapi.duckdns.org/setup-windows?key=${encodedKey}&mode=${mode}" | iex`;
+      document.getElementById('cmd-linux').textContent = `curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${encodedKey}&mode=${mode}" | bash`;
     }
   </script>
 </body>
@@ -626,13 +669,21 @@ echo -e "\\033[1;37m👉 De ap dung ngay, go lenh: \\033[1;32msource ~/.bashrc\\
 echo -e "\\033[1;37m👉 Mo Grok Build TUI bang cach go chu: \\033[1;32mgrok\\033[0m"
 """
 
-def generate_codex_ps_script(key: str) -> str:
+def generate_codex_ps_script(key: str, mode: str = "smart") -> str:
     """Generate the Windows installer without overwriting existing Codex/Grok settings."""
+    mode = normalize_setup_mode(mode)
+    settings = SETUP_MODES[mode]
     template = r'''# Grok API one-click setup for Codex App + official Grok Build
 $ErrorActionPreference = "Stop"
 $apiKey = "__API_KEY__"
 $baseUrl = "__BASE_URL__"
 $model = "grok-4.6"
+$defaultMode = "__MODE__"
+$defaultEffort = "__EFFORT__"
+$defaultSummary = "__SUMMARY__"
+$defaultVerbosity = "__VERBOSITY__"
+$idleTimeoutMs = __IDLE_TIMEOUT_MS__
+$maxCompletionTokens = __MAX_COMPLETION_TOKENS__
 
 Write-Host "Grok API - Codex App + Grok Build setup" -ForegroundColor Cyan
 if ($apiKey -notmatch '^sk-[A-Za-z0-9_+=-]{16,256}$') {
@@ -672,14 +723,17 @@ function Update-CodexConfig([string]$Path) {
         $tail = ""
     }
 
-    $managedKeys = '^(model|model_provider|model_reasoning_effort|model_verbosity|model_context_window)\s*='
+    $managedKeys = '^(model|model_provider|model_reasoning_effort|model_reasoning_summary|model_verbosity|model_context_window|web_search|personality)\s*='
     $keptHead = @($head -split '\r?\n' | Where-Object { $_ -notmatch $managedKeys }) -join "`n"
     $prefix = @"
 model = "$model"
 model_provider = "grokapi"
-model_reasoning_effort = "low"
-model_verbosity = "low"
-model_context_window = 500000
+model_reasoning_effort = "$defaultEffort"
+model_reasoning_summary = "$defaultSummary"
+model_verbosity = "$defaultVerbosity"
+model_context_window = 131072
+web_search = "disabled"
+personality = "none"
 "@
     $provider = @"
 
@@ -690,8 +744,9 @@ env_key = "SUB2API_API_KEY"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
-request_max_retries = 2
-stream_max_retries = 2
+request_max_retries = 1
+stream_max_retries = 1
+stream_idle_timeout_ms = $idleTimeoutMs
 "@
     $updated = $prefix.Trim() + "`n"
     if ($keptHead.Trim()) { $updated += $keptHead.Trim() + "`n" }
@@ -713,11 +768,12 @@ function Update-GrokConfig([string]$Path) {
         $content = [regex]::Replace($content, $modelsPattern, {
             param($match)
             $body = [regex]::Replace($match.Value, '(?m)^\s*default\s*=.*\r?\n?', '')
+            $body = [regex]::Replace($body, '(?m)^\s*default_reasoning_effort\s*=.*\r?\n?', '')
             $body = [regex]::Replace($body, '^\s*\[models\]\s*\r?\n?', '')
-            return "[models]`ndefault = `"sub2api-grok`"`n" + $body.Trim() + "`n`n"
+            return "[models]`ndefault = `"sub2api-grok`"`ndefault_reasoning_effort = `"$defaultEffort`"`n" + $body.Trim() + "`n`n"
         })
     } else {
-        $content = "[models]`ndefault = `"sub2api-grok`"`n`n" + $content.Trim()
+        $content = "[models]`ndefault = `"sub2api-grok`"`ndefault_reasoning_effort = `"$defaultEffort`"`n`n" + $content.Trim()
     }
 
     $customModel = @"
@@ -729,8 +785,10 @@ name = "Grok 4.6 via API"
 description = "Grok 4.6 through grokapi.duckdns.org"
 env_key = "SUB2API_API_KEY"
 api_backend = "responses"
-context_window = 500000
-max_completion_tokens = 8192
+context_window = 131072
+max_completion_tokens = $maxCompletionTokens
+supports_reasoning_effort = true
+reasoning_effort = "$defaultEffort"
 "@
     Write-Utf8NoBom $Path ($content.Trim() + $customModel + "`n")
 }
@@ -741,8 +799,57 @@ $grokDir = Join-Path $env:USERPROFILE ".grok"
 [IO.Directory]::CreateDirectory($grokDir) | Out-Null
 Update-CodexConfig (Join-Path $codexDir "config.toml")
 Update-GrokConfig (Join-Path $grokDir "config.toml")
+
+$profiles = @{
+    "grok-fast.config.toml" = @"
+model = "grok-4.6"
+model_provider = "grokapi"
+model_reasoning_effort = "low"
+model_reasoning_summary = "none"
+model_verbosity = "low"
+"@
+    "grok-smart.config.toml" = @"
+model = "grok-4.6"
+model_provider = "grokapi"
+model_reasoning_effort = "medium"
+model_reasoning_summary = "auto"
+model_verbosity = "medium"
+"@
+    "grok-thinking.config.toml" = @"
+model = "grok-4.6"
+model_provider = "grokapi"
+model_reasoning_effort = "high"
+model_reasoning_summary = "auto"
+model_verbosity = "medium"
+"@
+}
+foreach ($profile in $profiles.GetEnumerator()) {
+    Write-Utf8NoBom (Join-Path $codexDir $profile.Key) ($profile.Value.Trim() + "`n")
+}
+
+$agentsPath = Join-Path $codexDir "AGENTS.md"
+$agents = if (Test-Path -LiteralPath $agentsPath) { [IO.File]::ReadAllText($agentsPath) } else { "" }
+$agents = [regex]::Replace(
+    $agents,
+    '(?ms)^<!-- BEGIN GROKAPI (?:FAST MODE|CHAT RULES) -->.*?^<!-- END GROKAPI (?:FAST MODE|CHAT RULES) -->\s*',
+    ''
+)
+$chatRules = @"
+<!-- BEGIN GROKAPI CHAT RULES -->
+# Grok API chat and file rules
+
+- Answer greetings and ordinary questions directly without inspecting the workspace or calling tools.
+- Use tools only when the user asks for an action, current external information, or a named local file.
+- When a file is attached or named, read only that file first; do not scan the repository.
+- Do not turn a general question into a code-edit task unless the user asks for code changes.
+<!-- END GROKAPI CHAT RULES -->
+"@
+Write-Utf8NoBom $agentsPath (($agents.Trim() + "`n`n" + $chatRules.Trim()).Trim() + "`n")
+
 Write-Host "[OK] Da cau hinh Codex App -> grok-4.6." -ForegroundColor Green
 Write-Host "[OK] Da cau hinh Grok Build -> sub2api-grok." -ForegroundColor Green
+Write-Host "[OK] Che do mac dinh: $defaultMode ($defaultEffort reasoning)." -ForegroundColor Green
+Write-Host "[OK] Da tao profile: grok-fast, grok-smart, grok-thinking." -ForegroundColor Green
 
 if (-not (Get-Command grok -ErrorAction SilentlyContinue)) {
     if (Get-Command npm -ErrorAction SilentlyContinue) {
@@ -755,20 +862,37 @@ if (-not (Get-Command grok -ErrorAction SilentlyContinue)) {
 
 Write-Host "`nHOAN TAT." -ForegroundColor Cyan
 Write-Host "- Dong/mo lai Codex App, tao task moi."
+Write-Host "- Kiem tra ~/.codex/config.toml: model=grok-4.6, provider=grokapi."
+Write-Host "- Codex CLI: codex --profile grok-fast | grok-smart | grok-thinking"
 Write-Host "- Mo terminal moi va chay: grok inspect"
-Write-Host "- Sau do chay: grok"
+Write-Host "- Grok Build: dung /effort trong TUI, hoac grok --effort low|medium|high"
 '''
-    return template.replace("__API_KEY__", key).replace("__BASE_URL__", BASE_URL)
+    return (template.replace("__API_KEY__", key)
+            .replace("__BASE_URL__", BASE_URL)
+            .replace("__MODE__", mode)
+            .replace("__EFFORT__", settings["effort"])
+            .replace("__SUMMARY__", settings["summary"])
+            .replace("__VERBOSITY__", settings["verbosity"])
+            .replace("__IDLE_TIMEOUT_MS__", settings["idle_timeout_ms"])
+            .replace("__MAX_COMPLETION_TOKENS__", settings["max_completion_tokens"]))
 
 
-def generate_codex_bash_script(key: str) -> str:
+def generate_codex_bash_script(key: str, mode: str = "smart") -> str:
     """Generate the Linux/WSL installer and preserve unrelated TOML/shell settings."""
+    mode = normalize_setup_mode(mode)
+    settings = SETUP_MODES[mode]
     template = r'''#!/usr/bin/env bash
 set -euo pipefail
 
 API_KEY='__API_KEY__'
 BASE_URL='__BASE_URL__'
 MODEL='grok-4.6'
+DEFAULT_MODE='__MODE__'
+DEFAULT_EFFORT='__EFFORT__'
+DEFAULT_SUMMARY='__SUMMARY__'
+DEFAULT_VERBOSITY='__VERBOSITY__'
+IDLE_TIMEOUT_MS='__IDLE_TIMEOUT_MS__'
+MAX_COMPLETION_TOKENS='__MAX_COMPLETION_TOKENS__'
 export SUB2API_API_KEY="$API_KEY"
 
 case "$API_KEY" in
@@ -797,12 +921,12 @@ command -v python3 >/dev/null 2>&1 || {
   exit 1
 }
 
-python3 - "$HOME/.codex/config.toml" "$HOME/.grok/config.toml" "$BASE_URL" "$MODEL" <<'PY'
+python3 - "$HOME/.codex/config.toml" "$HOME/.grok/config.toml" "$BASE_URL" "$MODEL" "$DEFAULT_EFFORT" "$DEFAULT_SUMMARY" "$DEFAULT_VERBOSITY" "$IDLE_TIMEOUT_MS" "$MAX_COMPLETION_TOKENS" <<'PY'
 from pathlib import Path
 import re
 import sys
 
-codex_path, grok_path, base_url, model = sys.argv[1:]
+codex_path, grok_path, base_url, model, effort, summary, verbosity, idle_timeout_ms, max_completion_tokens = sys.argv[1:]
 
 def read(path):
     p = Path(path)
@@ -815,13 +939,17 @@ codex = read(codex_path)
 codex = re.sub(r'(?ms)^\s*\[model_providers\.grokapi\]\s*\n.*?(?=^\s*\[|\Z)', '', codex)
 match = re.search(r'(?m)^\s*\[', codex)
 head, tail = (codex[:match.start()], codex[match.start():]) if match else (codex, '')
-managed = re.compile(r'^\s*(model|model_provider|model_reasoning_effort|model_verbosity|model_context_window)\s*=')
+managed = re.compile(r'^\s*(model|model_provider|model_reasoning_effort|model_reasoning_summary|model_verbosity|model_context_window|web_search|personality)\s*=')
 head = '\n'.join(line for line in head.splitlines() if not managed.match(line)).strip()
 prefix = f"""model = "{model}"
 model_provider = "grokapi"
-model_reasoning_effort = "low"
-model_verbosity = "low"
-model_context_window = 500000"""
+model_reasoning_effort = "{effort}"
+model_reasoning_summary = "{summary}"
+model_verbosity = "{verbosity}"
+model_context_window = 131072
+web_search = "disabled"
+personality = "none"
+"""
 provider = f"""[model_providers.grokapi]
 name = "Grok API"
 base_url = "{base_url}"
@@ -829,8 +957,9 @@ env_key = "SUB2API_API_KEY"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
-request_max_retries = 2
-stream_max_retries = 2"""
+request_max_retries = 1
+stream_max_retries = 1
+stream_idle_timeout_ms = {idle_timeout_ms}"""
 write(codex_path, '\n\n'.join(part for part in (prefix, head, tail.strip(), provider) if part))
 
 grok = read(grok_path)
@@ -839,11 +968,12 @@ models_re = re.compile(r'(?ms)^\s*\[models\]\s*\n.*?(?=^\s*\[|\Z)')
 models_match = models_re.search(grok)
 if models_match:
     block = re.sub(r'(?m)^\s*default\s*=.*\n?', '', models_match.group(0))
+    block = re.sub(r'(?m)^\s*default_reasoning_effort\s*=.*\n?', '', block)
     block = re.sub(r'^\s*\[models\]\s*\n?', '', block).strip()
-    replacement = '[models]\ndefault = "sub2api-grok"\n' + (block + '\n' if block else '') + '\n'
+    replacement = f'[models]\ndefault = "sub2api-grok"\ndefault_reasoning_effort = "{effort}"\n' + (block + '\n' if block else '') + '\n'
     grok = grok[:models_match.start()] + replacement + grok[models_match.end():]
 else:
-    grok = '[models]\ndefault = "sub2api-grok"\n\n' + grok
+    grok = f'[models]\ndefault = "sub2api-grok"\ndefault_reasoning_effort = "{effort}"\n\n' + grok
 custom = f"""[model."sub2api-grok"]
 model = "{model}"
 base_url = "{base_url}"
@@ -851,12 +981,48 @@ name = "Grok 4.6 via API"
 description = "Grok 4.6 through grokapi.duckdns.org"
 env_key = "SUB2API_API_KEY"
 api_backend = "responses"
-context_window = 500000
-max_completion_tokens = 8192"""
+context_window = 131072
+max_completion_tokens = {max_completion_tokens}
+supports_reasoning_effort = true
+reasoning_effort = "{effort}"
+"""
 write(grok_path, grok.rstrip() + '\n\n' + custom)
+
+profiles = {
+    'grok-fast.config.toml': ('low', 'none', 'low'),
+    'grok-smart.config.toml': ('medium', 'auto', 'medium'),
+    'grok-thinking.config.toml': ('high', 'auto', 'medium'),
+}
+for filename, (profile_effort, profile_summary, profile_verbosity) in profiles.items():
+    profile_text = '\n'.join((
+        'model = "grok-4.6"',
+        'model_provider = "grokapi"',
+        f'model_reasoning_effort = "{profile_effort}"',
+        f'model_reasoning_summary = "{profile_summary}"',
+        f'model_verbosity = "{profile_verbosity}"',
+    ))
+    write(Path(codex_path).parent / filename, profile_text)
+
+agents_path = Path.home() / '.codex' / 'AGENTS.md'
+agents = read(agents_path)
+agents = re.sub(
+    r'(?ms)^<!-- BEGIN GROKAPI (?:FAST MODE|CHAT RULES) -->.*?^<!-- END GROKAPI (?:FAST MODE|CHAT RULES) -->\s*',
+    '',
+    agents,
+)
+chat_rules = """<!-- BEGIN GROKAPI CHAT RULES -->
+# Grok API chat and file rules
+
+- Answer greetings and ordinary questions directly without inspecting the workspace or calling tools.
+- Use tools only when the user asks for an action, current external information, or a named local file.
+- When a file is attached or named, read only that file first; do not scan the repository.
+- Do not turn a general question into a code-edit task unless the user asks for code changes.
+<!-- END GROKAPI CHAT RULES -->"""
+write(agents_path, agents.strip() + '\n\n' + chat_rules)
 PY
 
-echo "[OK] Da cau hinh Codex + Grok Build."
+echo "[OK] Da cau hinh Codex + Grok Build: $DEFAULT_MODE ($DEFAULT_EFFORT reasoning)."
+echo "[OK] Da tao profile: grok-fast, grok-smart, grok-thinking."
 
 if ! command -v grok >/dev/null 2>&1; then
   echo "[..] Dang cai Grok Build chinh thuc tu xAI..."
@@ -870,9 +1036,18 @@ fi
 
 echo
 echo "HOAN TAT. Mo terminal moi, chay: grok inspect"
-echo "Sau do chay: grok"
+echo "Dong/mo lai Codex App va tao thread moi."
+echo "Codex CLI: codex --profile grok-fast | grok-smart | grok-thinking"
+echo "Grok Build: dung /effort trong TUI, hoac grok --effort low|medium|high"
 '''
-    return template.replace("__API_KEY__", key).replace("__BASE_URL__", BASE_URL)
+    return (template.replace("__API_KEY__", key)
+            .replace("__BASE_URL__", BASE_URL)
+            .replace("__MODE__", mode)
+            .replace("__EFFORT__", settings["effort"])
+            .replace("__SUMMARY__", settings["summary"])
+            .replace("__VERBOSITY__", settings["verbosity"])
+            .replace("__IDLE_TIMEOUT_MS__", settings["idle_timeout_ms"])
+            .replace("__MAX_COMPLETION_TOKENS__", settings["max_completion_tokens"]))
 
 
 class PortalHandler(BaseHTTPRequestHandler):
@@ -908,7 +1083,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b"Invalid API key")
                 return
 
-            ps_script = generate_codex_ps_script(key)
+            mode = normalize_setup_mode(qs.get("mode", ["smart"])[0])
+            ps_script = generate_codex_ps_script(key, mode)
             self.send_response(200)
             self.send_header("Content-Type", "text/x-powershell; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
@@ -926,7 +1102,8 @@ class PortalHandler(BaseHTTPRequestHandler):
                 self.wfile.write(b"Invalid API key")
                 return
 
-            bash_script = generate_codex_bash_script(key)
+            mode = normalize_setup_mode(qs.get("mode", ["smart"])[0])
+            bash_script = generate_codex_bash_script(key, mode)
             self.send_response(200)
             self.send_header("Content-Type", "text/x-shellscript; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
