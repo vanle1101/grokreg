@@ -318,7 +318,11 @@ def start(
             popen_kw: dict[str, Any] = {
                 'stdin': subprocess.DEVNULL,
                 'stdout': subprocess.DEVNULL,
-                'stderr': subprocess.PIPE,
+                # Never leave the long-running solver attached to an unread
+                # pipe.  Closing the previous PIPE after readiness caused the
+                # next Quart/Camoufox log write to hit a broken pipe and could
+                # terminate the solver in the middle of a batch.
+                'stderr': subprocess.DEVNULL,
                 'env': child_env,
                 'cwd': os.path.dirname(_solver_start_script()),
             }
@@ -339,22 +343,13 @@ def start(
         for _ in range(_READY_TIMEOUT_SEC):
             time.sleep(1)
             if _proc.poll() is not None:
-                stderr_msg = ''
-                try:
-                    if _proc.stderr:
-                        stderr_msg = _proc.stderr.read().decode(
-                            'utf-8', errors='replace',
-                        )[:800]
-                except Exception:
-                    pass
                 _consecutive_failures += 1
-                _last_failure_reason = stderr_msg or f'进程退出 code={_proc.returncode}'
+                _last_failure_reason = f'进程退出 code={_proc.returncode}'
                 logger.error(
-                    '[Solver] child exited code=%s (fail %s/%s)%s',
+                    '[Solver] child exited code=%s (fail %s/%s)',
                     _proc.returncode,
                     _consecutive_failures,
                     _MAX_CONSECUTIVE_FAILURES,
-                    f' stderr={stderr_msg}' if stderr_msg else '',
                 )
                 _proc = None
                 _owned_by_us = False
@@ -363,22 +358,10 @@ def start(
                 logger.info('[Solver] online PID=%s url=%s', _proc.pid, _managed_url)
                 _consecutive_failures = 0
                 _last_failure_reason = ''
-                try:
-                    if _proc.stderr:
-                        _proc.stderr.close()
-                except Exception:
-                    pass
                 return get_status(_managed_url)
 
         _consecutive_failures += 1
-        stderr_msg = ''
-        try:
-            if _proc and _proc.stderr:
-                stderr_msg = _proc.stderr.read(2000).decode('utf-8', errors='replace')
-                _proc.stderr.close()
-        except Exception:
-            pass
-        _last_failure_reason = f'启动超时（{_READY_TIMEOUT_SEC}s） {stderr_msg}'.strip()
+        _last_failure_reason = f'启动超时（{_READY_TIMEOUT_SEC}s）'
         logger.error('[Solver] %s', _last_failure_reason)
         return get_status(_managed_url)
 

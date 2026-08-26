@@ -90,16 +90,24 @@ class GrokToolPlugin(BaseToolPlugin):
                 if str(root) not in sys.path:
                     sys.path.insert(0, str(root))
                 from grokreg.core.config import load_config
-                from services.solver_manager import get_status, start_async
+                from services.solver_manager import ensure_started, get_status
 
                 cfg = load_config()
                 st = get_status(
                     str((cfg.get("turnstile") or {}).get("solver_url") or "") or None
                 )
                 if not st.get("online"):
-                    start_async(cfg)
-            except Exception:
-                pass
+                    st = ensure_started(cfg)
+                if not st.get("online") and st.get("provider") != "yescaptcha":
+                    detail = str(st.get("last_error") or st.get("message") or "")
+                    raise RuntimeError(
+                        "Turnstile solver :5072 không khởi động được"
+                        + (f": {detail}" if detail else "")
+                    )
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                raise RuntimeError(f"Không kiểm tra được Turnstile solver: {exc}") from exc
         if not self._is_hotmail_mail(str(params.get("mail") or "0")):
             return
         pool = self.hotmail_pool(root)

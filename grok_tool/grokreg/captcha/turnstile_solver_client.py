@@ -131,13 +131,19 @@ class ExternalTurnstileSolver:
             raise TurnstileSolveError("local solver returned no taskId")
         log.info("[turnstile] local solver taskId=%s — polling…", task_id)
 
-        deadline = time.time() + self.timeout
+        # Use a monotonic deadline and keep each HTTP poll shorter than the
+        # remaining budget.  Previously a 20s request could overrun the
+        # deadline and leave the registration worker apparently frozen.
+        deadline = time.monotonic() + self.timeout
         time.sleep(min(4.0, self.timeout / 4))
-        while time.time() < deadline:
+        poll_no = 0
+        while time.monotonic() < deadline:
+            poll_no += 1
+            remaining = max(0.1, deadline - time.monotonic())
             try:
                 result = self._http.get(
                     f"{self.solver_url}/result?id={quote(str(task_id), safe='')}",
-                    timeout=20,
+                    timeout=min(5.0, remaining),
                 )
                 result.raise_for_status()
                 payload = result.json() or {}
@@ -152,8 +158,16 @@ class ExternalTurnstileSolver:
             except TurnstileSolveError:
                 raise
             except Exception as exc:
-                log.debug("[turnstile] poll error: %s", exc)
-            time.sleep(self.poll_interval)
+                log.warning("[turnstile] poll %s error: %s", poll_no, exc)
+            else:
+                if poll_no == 1 or poll_no % 5 == 0:
+                    log.info(
+                        "[turnstile] polling task=%s poll=%s remaining=%.1fs",
+                        task_id,
+                        poll_no,
+                        max(0.0, deadline - time.monotonic()),
+                    )
+            time.sleep(min(self.poll_interval, max(0.0, deadline - time.monotonic())))
         raise TurnstileSolveError(f"local solver timed out after {self.timeout}s")
 
     def _solve_yescaptcha(self, website: str, site_key: str) -> str:
