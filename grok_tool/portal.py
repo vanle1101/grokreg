@@ -170,6 +170,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .mode-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
     .mode-btn { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 9px; color: var(--muted); padding: 9px 7px; cursor: pointer; font-size: 11.5px; font-weight: 700; }
     .mode-btn.active { color: #fff; border-color: var(--accent); background: rgba(56,189,248,0.14); }
+    .launch-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+    .launch-box { padding:10px 12px; border:1px solid rgba(255,255,255,.09); border-radius:9px; background:rgba(0,0,0,.18); }
+    .launch-code { display:block; margin:5px 0; padding:6px 8px; border-radius:6px; background:rgba(0,0,0,.45); color:#fff; overflow-wrap:anywhere; }
     .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; }
     .badge-active { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid #10b981; }
     .badge-exhausted { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid #ef4444; }
@@ -183,6 +186,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     .tok-val { font-family: monospace; font-weight: 600; color: #fff; }
     .cost-val { color: #f59e0b; font-weight: 700; }
     .lat-val { color: #38bdf8; font-family: monospace; }
+    @media (max-width: 680px) {
+      .launch-grid, .stat-grid { grid-template-columns: 1fr; }
+      .mode-row { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -310,15 +317,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <button class="copy-btn" onclick="copyFromElem('cmd-linux', this)">📋 Copy</button>
               </div>
               <p style="font-size:11px; color:var(--muted); margin-top:6px;">Cài đúng Grok 4.6 và tạo đủ 3 profile. Sau khi chạy: đóng hẳn app, mở lại và tạo thread mới.</p>
-              <div style="margin-top:14px; padding:13px 15px; border:1px solid rgba(56,189,248,0.22); border-radius:10px; background:rgba(56,189,248,0.05); font-size:12px; line-height:1.75; color:var(--muted);">
-                <div style="font-weight:800; color:#fff; margin-bottom:6px;">📖 Cách dùng Grok Build bằng API (3 bước)</div>
-                <div><b style="color:#38bdf8;">Bước 1 — Chọn đúng lệnh:</b></div>
-                <div style="margin-left:12px;">• Dùng Windows PowerShell: copy <b style="color:#fff;">lệnh Windows</b> ở phía trên rồi dán vào PowerShell.</div>
-                <div style="margin-left:12px;">• Dùng Ubuntu/WSL: copy <b style="color:#fff;">lệnh Linux</b> ở phía trên rồi dán vào WSL.</div>
-                <div style="margin-top:4px;"><b style="color:#38bdf8;">Bước 2 — Mở lại terminal:</b> chờ cài xong, đóng terminal Grok đang mở và mở một terminal mới.</div>
-                <div style="margin-top:4px;"><b style="color:#38bdf8;">Bước 3 — Khởi chạy:</b> gõ <code style="color:#fff; background:rgba(0,0,0,.3); padding:2px 5px; border-radius:4px;">grok -m sub2api-grok</code> rồi Enter.</div>
-                <div style="margin-top:4px;"><b style="color:#38bdf8;">Đổi tốc độ (nếu muốn):</b> trong Grok gõ từng lệnh <code style="color:#fff; background:rgba(0,0,0,.3); padding:2px 5px; border-radius:4px;">/effort low</code> (nhanh), <code style="color:#fff; background:rgba(0,0,0,.3); padding:2px 5px; border-radius:4px;">/effort medium</code> (cân bằng), hoặc <code style="color:#fff; background:rgba(0,0,0,.3); padding:2px 5px; border-radius:4px;">/effort high</code> (suy luận sâu).</div>
-                <div style="margin-top:5px; color:#94a3b8;">Không cần đăng nhập tài khoản Grok/OAuth. Muốn đọc file, nói rõ tên file cần đọc.</div>
+              <div style="margin-top:14px; padding:13px 15px; border:1px solid rgba(56,189,248,0.22); border-radius:10px; background:rgba(56,189,248,0.05); font-size:12px; line-height:1.65; color:var(--muted);">
+                <div style="font-weight:800; color:#fff; margin-bottom:2px;">📖 CÁCH CÀI VÀ MỞ GROK BUILD BẰNG API</div>
+                <div>Chỉ làm theo <b style="color:#fff;">một</b> cột đúng với nơi bạn chạy Grok Build:</div>
+                <div class="launch-grid">
+                  <div class="launch-box">
+                    <div style="font-weight:800;color:#38bdf8;">🪟 Windows PowerShell</div>
+                    <div>1. Copy và chạy <b>lệnh Windows</b> ở trên.</div>
+                    <div>2. Chờ báo hoàn tất, đóng PowerShell và mở PowerShell mới.</div>
+                    <div>3. Khởi chạy bằng:</div>
+                    <code id="launch-win" class="launch-code">grok -m sub2api-grok --effort medium</code>
+                  </div>
+                  <div class="launch-box">
+                    <div style="font-weight:800;color:#34d399;">🐧 Ubuntu / WSL</div>
+                    <div>1. Mở WSL, copy và chạy <b>lệnh Linux</b> ở trên.</div>
+                    <div>2. Chờ báo hoàn tất rồi gõ <code style="color:#fff;">exec bash</code>.</div>
+                    <div>3. Khởi chạy bằng:</div>
+                    <code id="launch-wsl" class="launch-code">grok -m sub2api-grok --effort medium</code>
+                  </div>
+                </div>
+                <div style="margin-top:7px;"><b style="color:#38bdf8;">Đổi chế độ:</b> Fast = <code style="color:#fff;">low</code>, Smart = <code style="color:#fff;">medium</code>, Thinking = <code style="color:#fff;">high</code>. Có thể gõ <code style="color:#fff;">/effort</code> ngay trong Grok Build để đổi.</div>
+                <div style="margin-top:4px;"><b style="color:#fbbf24;">Nếu Grok mở trang đăng nhập:</b> đóng Grok, mở terminal mới và chạy lại đúng lệnh <code style="color:#fff;">grok -m sub2api-grok</code>.</div>
+                <div style="margin-top:4px; color:#94a3b8;">Không cần tài khoản Grok/OAuth. Muốn đọc file, hãy nói rõ đường dẫn hoặc tên file.</div>
               </div>
             </div>
           </div>
@@ -413,6 +433,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const encodedKey = encodeURIComponent(key);
       document.getElementById('cmd-win').textContent = `irm "https://grokapi.duckdns.org/setup-windows?key=${encodedKey}&mode=${mode}" | iex`;
       document.getElementById('cmd-linux').textContent = `curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${encodedKey}&mode=${mode}" | bash`;
+      const effort = {fast: 'low', smart: 'medium', thinking: 'high'}[mode];
+      document.getElementById('launch-win').textContent = `grok -m sub2api-grok --effort ${effort}`;
+      document.getElementById('launch-wsl').textContent = `grok -m sub2api-grok --effort ${effort}`;
     }
   </script>
 </body>
