@@ -858,7 +858,9 @@ function Update-ZCodeConfig([string]$Path) {
     }
     $modelConfig = [ordered]@{
         reasoning = $reasoning
-        limit = [ordered]@{ context = 256000; output = $maxCompletionTokens }
+        # This is a per-response ceiling, not the customer's purchased-token
+        # quota. Keep enough room for Grok 4.6 reasoning even in Fast mode.
+        limit = [ordered]@{ context = 256000; output = 32768 }
         modalities = [ordered]@{ input = @('text', 'image', 'video'); output = @('text') }
         zcode = [ordered]@{ modalitiesConfigured = $true }
     }

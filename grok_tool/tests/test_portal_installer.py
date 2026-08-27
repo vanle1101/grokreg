@@ -18,6 +18,7 @@ class PortalInstallerTest(unittest.TestCase):
         self.assertIn("reasoningEffort = 'medium'", script)
         self.assertIn("reasoningEffort = 'high'", script)
         self.assertIn("defaultLevel = $defaultEffort", script)
+        self.assertIn("output = 32768", script)
 
     def test_windows_installer_uses_selected_default_effort(self):
         expected = {"fast": "low", "smart": "medium", "thinking": "high"}
