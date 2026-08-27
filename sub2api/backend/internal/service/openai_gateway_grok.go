@@ -503,6 +503,10 @@ func patchGrokResponsesBodyBase(body []byte, upstreamModel string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
+	out, err = applyGrokAgentActionGuardrail(out)
+	if err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 

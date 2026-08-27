@@ -217,7 +217,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div style="font-size: 13px; line-height: 1.8; color: var(--muted);">
         <div>🌐 <b>Base URL:</b> <code style="color: #fff;">https://grokapi.duckdns.org/v1</code></div>
         <div>🤖 <b>Model:</b> <code style="color: #38bdf8;">grok-4.6</code>, <code style="color: #38bdf8;">grok-4.5</code>, <code style="color: #38bdf8;">grok-2</code></div>
-        <div>⚡ <b>Tương thích:</b> Codex App/CLI, Grok Build và client OpenAI-compatible.</div>
+        <div>⚡ <b>Tương thích:</b> Codex App/CLI, ZCode, Grok Build và client OpenAI-compatible.</div>
         <div>📁 <b>Đọc file:</b> Codex/Grok Build đọc file trong workspace; hãy nói rõ tên file cần đọc.</div>
         <div>🎚️ <b>3 chế độ:</b> Fast / Smart / Thinking đều dùng đúng <code style="color:#38bdf8;">grok-4.6</code>; chỉ thay mức suy luận.</div>
       </div>
@@ -302,7 +302,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
             <!-- Windows 1-Click Command -->
             <div style="margin-top:16px;">
-              <div style="font-size:12px; font-weight:700; color:#38bdf8; margin-bottom:6px;">⚡ Lệnh 1-Click Cài Đặt Cho Windows (PowerShell / Codex App):</div>
+              <div style="font-size:12px; font-weight:700; color:#38bdf8; margin-bottom:6px;">⚡ Lệnh 1-Click Windows (Codex App / ZCode / Grok Build):</div>
               <div class="code-box">
                 <span id="cmd-win">irm "https://grokapi.duckdns.org/setup-windows?key=${encodeURIComponent(d.full_key)}&mode=smart" | iex</span>
                 <button class="copy-btn" onclick="copyFromElem('cmd-win', this)">📋 Copy</button>
@@ -316,7 +316,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <span id="cmd-linux">curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${encodeURIComponent(d.full_key)}&mode=smart" | bash</span>
                 <button class="copy-btn" onclick="copyFromElem('cmd-linux', this)">📋 Copy</button>
               </div>
-              <p style="font-size:11px; color:var(--muted); margin-top:6px;">Cài đúng Grok 4.6 và tạo đủ 3 profile. Sau khi chạy: đóng hẳn app, mở lại và tạo thread mới.</p>
+              <p style="font-size:11px; color:var(--muted); margin-top:6px;">Cấu hình đúng Grok 4.6 và 3 mức Low / Medium / High thật. Sau khi chạy: đóng hẳn app, mở lại và tạo thread mới.</p>
               <div style="margin-top:14px; padding:13px 15px; border:1px solid rgba(56,189,248,0.22); border-radius:10px; background:rgba(56,189,248,0.05); font-size:12px; line-height:1.65; color:var(--muted);">
                 <div style="font-weight:800; color:#fff; margin-bottom:2px;">📖 CÁCH CÀI VÀ MỞ GROK BUILD BẰNG API</div>
                 <div>Chỉ làm theo <b style="color:#fff;">một</b> cột đúng với nơi bạn chạy Grok Build:</div>
@@ -826,12 +826,66 @@ reasoning_effort = "$defaultEffort"
     Write-Utf8NoBom $Path ($content.Trim() + $customModel + "`n")
 }
 
+function Update-ZCodeConfig([string]$Path) {
+    $config = if (Test-Path -LiteralPath $Path) {
+        [IO.File]::ReadAllText($Path) | ConvertFrom-Json
+    } else {
+        [PSCustomObject]@{ provider = [PSCustomObject]@{} }
+    }
+    if (-not $config.PSObject.Properties['provider']) {
+        $config | Add-Member -NotePropertyName provider -NotePropertyValue ([PSCustomObject]@{})
+    }
+
+    $existingName = $null
+    foreach ($property in $config.provider.PSObject.Properties) {
+        $candidate = $property.Value
+        if ($candidate.name -eq 'Grok API' -or $candidate.options.baseURL -eq $baseUrl) {
+            $existingName = $property.Name
+            break
+        }
+    }
+    if (-not $existingName) { $existingName = 'grokapi' }
+
+    $reasoning = [ordered]@{
+        enabled = $true
+        levels = @('low', 'medium', 'high')
+        defaultLevel = $defaultEffort
+        providerOptionsByLevel = [ordered]@{
+            low = [ordered]@{ openai = [ordered]@{ reasoningEffort = 'low' } }
+            medium = [ordered]@{ openai = [ordered]@{ reasoningEffort = 'medium' } }
+            high = [ordered]@{ openai = [ordered]@{ reasoningEffort = 'high' } }
+        }
+    }
+    $modelConfig = [ordered]@{
+        reasoning = $reasoning
+        limit = [ordered]@{ context = 256000; output = $maxCompletionTokens }
+        modalities = [ordered]@{ input = @('text', 'image', 'video'); output = @('text') }
+        zcode = [ordered]@{ modalitiesConfigured = $true }
+    }
+    $providerConfig = [ordered]@{
+        name = 'Grok API'
+        kind = 'openai'
+        options = [ordered]@{ apiKey = $apiKey; baseURL = $baseUrl; apiKeyRequired = $true }
+        source = 'custom'
+        models = [ordered]@{ 'grok-4.6' = $modelConfig }
+    }
+
+    if ($config.provider.PSObject.Properties[$existingName]) {
+        $config.provider.PSObject.Properties.Remove($existingName)
+    }
+    $config.provider | Add-Member -NotePropertyName $existingName -NotePropertyValue $providerConfig
+    Write-Utf8NoBom $Path (($config | ConvertTo-Json -Depth 100) + "`n")
+}
+
 $codexDir = Join-Path $env:USERPROFILE ".codex"
 $grokDir = Join-Path $env:USERPROFILE ".grok"
+$zcodeDir = Join-Path $env:USERPROFILE ".zcode\v2"
 [IO.Directory]::CreateDirectory($codexDir) | Out-Null
 [IO.Directory]::CreateDirectory($grokDir) | Out-Null
+[IO.Directory]::CreateDirectory($zcodeDir) | Out-Null
 Update-CodexConfig (Join-Path $codexDir "config.toml")
 Update-GrokConfig (Join-Path $grokDir "config.toml")
+Update-ZCodeConfig (Join-Path $zcodeDir "config.json")
 
 $profiles = @{
     "grok-fast.config.toml" = @"
@@ -881,6 +935,7 @@ Write-Utf8NoBom $agentsPath (($agents.Trim() + "`n`n" + $chatRules.Trim()).Trim(
 
 Write-Host "[OK] Da cau hinh Codex App -> grok-4.6." -ForegroundColor Green
 Write-Host "[OK] Da cau hinh Grok Build -> sub2api-grok." -ForegroundColor Green
+Write-Host "[OK] Da cau hinh ZCode -> grok-4.6; Low/Medium/High gui reasoning that." -ForegroundColor Green
 Write-Host "[OK] Che do mac dinh: $defaultMode ($defaultEffort reasoning)." -ForegroundColor Green
 Write-Host "[OK] Da tao profile: grok-fast, grok-smart, grok-thinking." -ForegroundColor Green
 
