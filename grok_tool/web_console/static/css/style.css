@@ -24,6 +24,7 @@
 .theme-switching,.theme-switching *,.theme-switching *::before,.theme-switching *::after{transition:none!important}
 html,body{width:100%;height:100%}body{overflow:hidden;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-feature-settings:"rlig" 1,"calt" 1}
 .route-view{display:contents}.route-view[hidden]{display:none}
+
 button,input,textarea,select{font:inherit}button{border:0;background:none;color:inherit;cursor:pointer}a{color:inherit;text-decoration:none}.mono{font-family:var(--mono);font-size:12px}
 .app-backdrop{display:none}
 
@@ -202,4 +203,29 @@ html:not(.dark-theme) .log-console .line:hover{background:#f8fafc}html:not(.dark
   color: #38bdf8;
   border-bottom-color: #38bdf8;
 }
+
+/* Progress card v2 — determinate light only, quiet when the job is not running. */
+.job-progress{padding:16px 18px 15px;background:var(--card);border-bottom:1px solid var(--border);box-shadow:none}
+.job-progress.is-inactive{background:var(--card)}
+.progress-meta{margin-bottom:10px}
+.progress-meta strong{display:flex;align-items:baseline;gap:5px;font-size:13px;font-weight:650}
+.progress-meta strong small{color:var(--muted);font-size:10.5px;font-weight:500}
+.progress-meta>span{font-family:var(--mono);font-size:11px;font-weight:700}
+.progress-live-pill,.progress-rest-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;font-family:var(--sans);font-size:9.5px;font-weight:750;letter-spacing:.055em;box-shadow:none}
+.progress-live-pill{border:1px solid rgba(37,99,235,.24);background:rgba(37,99,235,.08);color:#2563eb}
+.progress-live-pill::before{width:5px;height:5px;background:#2563eb;box-shadow:none;animation:live-pulse 1.4s ease-in-out infinite}
+.progress-rest-pill{border:1px solid var(--border);background:var(--subtle);color:var(--muted)}
+.progress-rest-pill::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--muted);opacity:.6}
+.progress-track{height:7px;margin:0 0 12px;background:color-mix(in srgb,var(--border) 72%,var(--bg));box-shadow:inset 0 1px 2px rgba(15,23,42,.08)}
+.progress-track i{min-width:0;background:linear-gradient(90deg,#2563eb,#0ea5e9);box-shadow:none;transition:width .45s cubic-bezier(.22,1,.36,1)}
+.progress-track.is-active i:not([style*="width:0%"]){box-shadow:0 0 8px rgba(14,165,233,.28)}
+.job-progress.is-inactive .progress-track i{background:#94a3b8;box-shadow:none}
+.progress-detail{gap:8px}
+.progress-ok,.progress-fail{padding:3px 8px;border-radius:999px;background:transparent;font-size:10.5px;font-weight:600}
+.progress-ok{border-color:rgba(16,185,129,.22)}.progress-fail{border-color:rgba(239,68,68,.2)}
+.progress-ok::before,.progress-fail::before{width:5px;height:5px;box-shadow:none}
+.progress-elapsed{font-size:10.5px;color:var(--muted)}
+.progress-elapsed strong{font-size:10.5px;font-weight:650;color:var(--fg-2)}
+.dark-theme .progress-live-pill{border-color:rgba(96,165,250,.28);background:rgba(96,165,250,.1);color:#93c5fd}
+.dark-theme .progress-live-pill::before{background:#60a5fa}
 

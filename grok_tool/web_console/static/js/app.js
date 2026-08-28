@@ -172,17 +172,20 @@ function formatElapsed(job) {
 function progressContent(job) {
   const p = normalizedProgress(job);
   if (!p) return '';
+  const status = String(job?.status || 'idle').toLowerCase();
+  const active = ['running', 'pending', 'stopping'].includes(status);
   const countText = p.continuous
-    ? `${p.completed} tài khoản đã xử lý · chạy liên tục`
+    ? `${p.completed} tài khoản đã xử lý <small>· liên tục</small>`
     : `${p.completed} / ${p.total} tài khoản`;
-  const percentText = p.continuous ? '<span class="progress-live-pill">LIVE</span>' : `${p.percent}%`;
-  const width = p.continuous ? 35 : p.percent;
+  let stateText = `${p.percent ?? 0}%`;
+  if (p.continuous) stateText = active ? '<span class="progress-live-pill">ĐANG CHẠY</span>' : '<span class="progress-rest-pill">ĐÃ DỪNG</span>';
+  const width = p.continuous ? Math.min(100, p.completed * 5) : p.percent;
   return `
     <div class="progress-meta">
       <strong>${countText}</strong>
-      <span>${percentText}</span>
+      <span>${stateText}</span>
     </div>
-    <div class="progress-track${p.continuous ? ' is-continuous' : ''}" role="progressbar"
+    <div class="progress-track${active ? ' is-active' : ''}" role="progressbar"
       aria-label="Tiến trình đăng ký" aria-valuemin="0"
       ${p.continuous ? '' : `aria-valuemax="${p.total}" aria-valuenow="${p.completed}"`}>
       <i style="width:${width}%"></i>
@@ -190,8 +193,20 @@ function progressContent(job) {
     <div class="progress-detail">
       <span class="progress-ok">${p.ok} thành công</span>
       <span class="progress-fail">${p.failed} thất bại</span>
-      <span class="progress-elapsed">${job.ended_at ? 'Tổng thời gian' : 'Đã chạy'} <strong>${formatElapsed(job)}</strong></span>
+      <span class="progress-elapsed">${active ? 'Đang chạy' : 'Tổng thời gian'} <strong>${formatElapsed(job)}</strong></span>
     </div>`;
+}
+
+function shouldShowProgress(job) {
+  if (!job) return false;
+  const p = normalizedProgress(job);
+  const status = String(job.status || 'idle').toLowerCase();
+  return status !== 'idle' || Number(p?.completed || 0) > 0;
+}
+
+function progressPanelState(job) {
+  const status = String(job?.status || 'idle').toLowerCase();
+  return ['running', 'pending', 'stopping'].includes(status) ? 'is-active' : 'is-inactive';
 }
 
 function formatStatusLine(job) {
@@ -219,7 +234,9 @@ function formatStatusLine(job) {
 function updateJobProgress(job) {
   const panel = document.getElementById('job-progress');
   if (!panel) return;
-  panel.hidden = !job;
+  panel.hidden = !shouldShowProgress(job);
+  panel.classList.toggle('is-active', progressPanelState(job) === 'is-active');
+  panel.classList.toggle('is-inactive', progressPanelState(job) === 'is-inactive');
   panel.innerHTML = progressContent(job);
 }
 
@@ -624,7 +641,7 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
               <button class="btn btn-danger" id="btn-clear-log" type="button" title="Xoá log của phiên hiện tại">Xoá log</button>
             </div>
           </div>
-          <div class="job-progress" id="job-progress" ${job ? '' : 'hidden'}>${progressContent(job)}</div>
+          <div class="job-progress ${progressPanelState(job)}" id="job-progress" ${shouldShowProgress(job) ? '' : 'hidden'}>${progressContent(job)}</div>
           <div class="log-console" id="log-box"></div>
         </div>
       </div>
@@ -1090,7 +1107,7 @@ async function renderLogs(root) {
             <button class="btn btn-danger" id="btn-clear-log" type="button" title="Xoá log của phiên hiện tại">Xoá log</button>
           </div>
         </div>
-        <div class="job-progress" id="job-progress" ${job ? '' : 'hidden'}>${progressContent(job)}</div>
+        <div class="job-progress ${progressPanelState(job)}" id="job-progress" ${shouldShowProgress(job) ? '' : 'hidden'}>${progressContent(job)}</div>
         <div class="log-console" id="log-box" style="height:calc(100vh - 220px)"></div>
       </div>
     </div>
