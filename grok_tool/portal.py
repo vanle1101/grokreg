@@ -846,15 +846,25 @@ function Update-ZCodeConfig([string]$Path) {
     }
     if (-not $existingName) { $existingName = 'grokapi' }
 
-    $reasoning = [ordered]@{
-        enabled = $true
-        levels = @('low', 'medium', 'high')
-        defaultLevel = $defaultEffort
-        providerOptionsByLevel = [ordered]@{
-            low = [ordered]@{ openai = [ordered]@{ reasoningEffort = 'low' } }
-            medium = [ordered]@{ openai = [ordered]@{ reasoningEffort = 'medium' } }
-            high = [ordered]@{ openai = [ordered]@{ reasoningEffort = 'high' } }
+    function New-ReasoningPatch([string]$effort) {
+        return [ordered]@{
+            openai = [ordered]@{
+                set = @([ordered]@{ path = @('reasoningEffort'); value = $effort })
+            }
         }
+    }
+    $reasoning = [ordered]@{
+        # `variants` drives the visible ZCode selector. `levels` contains the
+        # provider patches that make each selection change the real request.
+        enabled = $true
+        variants = @('low', 'medium', 'high')
+        defaultVariant = $defaultEffort
+        levels = [ordered]@{
+            low = New-ReasoningPatch 'low'
+            medium = New-ReasoningPatch 'medium'
+            high = New-ReasoningPatch 'high'
+        }
+        defaultLevel = $defaultEffort
     }
     $modelConfig = [ordered]@{
         reasoning = $reasoning

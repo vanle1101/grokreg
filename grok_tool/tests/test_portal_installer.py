@@ -13,10 +13,12 @@ class PortalInstallerTest(unittest.TestCase):
         script = portal.generate_codex_ps_script("sk-" + "a" * 40, "thinking")
 
         self.assertIn("Update-ZCodeConfig", script)
-        self.assertIn("providerOptionsByLevel", script)
-        self.assertIn("reasoningEffort = 'low'", script)
-        self.assertIn("reasoningEffort = 'medium'", script)
-        self.assertIn("reasoningEffort = 'high'", script)
+        self.assertIn("variants = @('low', 'medium', 'high')", script)
+        self.assertIn("defaultVariant = $defaultEffort", script)
+        self.assertIn("low = New-ReasoningPatch 'low'", script)
+        self.assertIn("medium = New-ReasoningPatch 'medium'", script)
+        self.assertIn("high = New-ReasoningPatch 'high'", script)
+        self.assertIn("path = @('reasoningEffort')", script)
         self.assertIn("defaultLevel = $defaultEffort", script)
         self.assertIn("output = 32768", script)
 
