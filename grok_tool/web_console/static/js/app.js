@@ -1417,7 +1417,7 @@ async function renderKeys(root) {
             </div>
             <div class="info-row">
               <span class="lbl">🤖 Model hỗ trợ:</span>
-              <span class="val">grok-4.6, grok-4.5, grok-2, grok-beta</span>
+              <span class="val">grok-4.6</span>
             </div>
             <div class="info-row">
               <span class="lbl">⚡ Chuẩn kết nối:</span>
@@ -1551,7 +1551,7 @@ async function renderKeys(root) {
 * 🌐 Base URL: https://grokapi.duckdns.org/v1
 * 🔑 API Key: ${k}
 * 📊 Link Tra Cứu Số Dư: https://grokapi.duckdns.org/check?key=${k}
-* 🤖 Model: grok-4.6, grok-4.5, grok-2, grok-beta
+* 🤖 Model: grok-4.6
 * ⚡ Tương thích: 100% Codex Desktop App, Chatbox, NextChat, Cursor, VS Code...
 
 🚀 LỆNH 1-CLICK CHO WINDOWS (PowerShell):
@@ -1623,7 +1623,7 @@ curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${k}" | bash`;
 
       const container = root.querySelector('#key-result-container');
       const allKeyTexts = res.keys.map((k) => k.key).join('\n');
-      const allFormatTexts = res.keys.map((k, i) => `[Key #${i + 1} - ${k.name}]\nBase URL: ${res.base_url}\nAPI Key: ${k.key}\nSố dư: ${tokens.toLocaleString()} Tokens\nTra cứu số dư: https://grokapi.duckdns.org/check?key=${k.key}\nModel: grok-4.6, grok-4.5, grok-2`).join('\n\n---\n\n');
+      const allFormatTexts = res.keys.map((k, i) => `[Key #${i + 1} - ${k.name}]\nBase URL: ${res.base_url}\nAPI Key: ${k.key}\nSố dư: ${tokens.toLocaleString()} Tokens\nTra cứu số dư: https://grokapi.duckdns.org/check?key=${k.key}\nModel: grok-4.6`).join('\n\n---\n\n');
 
       const firstKey = res.keys[0]?.key || '';
       const oneClickCmd = `irm "https://grokapi.duckdns.org/setup-windows?key=${firstKey}" | iex`;

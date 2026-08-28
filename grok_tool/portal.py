@@ -124,7 +124,7 @@ def query_key_info(api_key: str) -> dict:
         "remain_pct": remain_pct,
         "created_at": format_ts(created_at),
         "last_used": format_ts(last_used) if last_used and last_used != "Chưa sử dụng" else "Chưa sử dụng",
-        "models": ["grok-4.6", "grok-4.5", "grok-2", "grok-beta"],
+        "models": ["grok-4.6"],
         "base_url": BASE_URL,
         "logs": logs,
     }
@@ -216,7 +216,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div style="font-size: 14px; font-weight: 700; margin-bottom: 12px; color: #fff;">📌 Thông Tin Cấu Hình Thủ Công:</div>
       <div style="font-size: 13px; line-height: 1.8; color: var(--muted);">
         <div>🌐 <b>Base URL:</b> <code style="color: #fff;">https://grokapi.duckdns.org/v1</code></div>
-        <div>🤖 <b>Model:</b> <code style="color: #38bdf8;">grok-4.6</code>, <code style="color: #38bdf8;">grok-4.5</code>, <code style="color: #38bdf8;">grok-2</code></div>
+        <div>🤖 <b>Model:</b> <code style="color: #38bdf8;">grok-4.6</code></div>
         <div>⚡ <b>Tương thích:</b> Codex App/CLI, ZCode, Grok Build và client OpenAI-compatible.</div>
         <div>📁 <b>Đọc file:</b> Codex/Grok Build đọc file trong workspace; hãy nói rõ tên file cần đọc.</div>
         <div>🎚️ <b>3 chế độ:</b> Fast / Smart / Thinking đều dùng đúng <code style="color:#38bdf8;">grok-4.6</code>; chỉ thay mức suy luận.</div>
