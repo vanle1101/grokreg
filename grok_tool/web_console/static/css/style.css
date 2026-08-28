@@ -23,6 +23,7 @@
 }
 .theme-switching,.theme-switching *,.theme-switching *::before,.theme-switching *::after{transition:none!important}
 html,body{width:100%;height:100%}body{overflow:hidden;background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-feature-settings:"rlig" 1,"calt" 1}
+.route-view{display:contents}.route-view[hidden]{display:none}
 button,input,textarea,select{font:inherit}button{border:0;background:none;color:inherit;cursor:pointer}a{color:inherit;text-decoration:none}.mono{font-family:var(--mono);font-size:12px}
 .app-backdrop{display:none}
 

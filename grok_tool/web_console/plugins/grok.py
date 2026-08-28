@@ -45,6 +45,19 @@ class GrokToolPlugin(BaseToolPlugin):
                 hint="0 = chạy liên tục đến khi Stop",
             ),
             ToolField(
+                key="threads",
+                label="Số luồng song song",
+                type="select",
+                default="5",
+                options=[
+                    FieldOption("1", "1 luồng", "ổn định / nhẹ máy"),
+                    FieldOption("3", "3 luồng", "cân bằng"),
+                    FieldOption("5", "5 luồng", "khuyến nghị"),
+                    FieldOption("10", "10 luồng", "nhanh / tốn RAM"),
+                ],
+                hint="Luồng thật cho HTTP không Chrome · Số lượng phải ≥ số luồng",
+            ),
+            ToolField(
                 key="sub2api",
                 label="Auto Sub2API",
                 type="checkbox",
@@ -93,11 +106,15 @@ class GrokToolPlugin(BaseToolPlugin):
                 from services.solver_manager import ensure_started, get_status
 
                 cfg = load_config()
+                try:
+                    threads = max(1, min(10, int(params.get("threads") or 1)))
+                except (TypeError, ValueError):
+                    threads = 1
                 st = get_status(
                     str((cfg.get("turnstile") or {}).get("solver_url") or "") or None
                 )
-                if not st.get("online"):
-                    st = ensure_started(cfg)
+                if not st.get("online") or st.get("threads") != threads:
+                    st = ensure_started(cfg, thread=threads)
                 if not st.get("online") and st.get("provider") != "yescaptcha":
                     detail = str(st.get("last_error") or st.get("message") or "")
                     raise RuntimeError(
@@ -142,6 +159,10 @@ class GrokToolPlugin(BaseToolPlugin):
             "castle",
         ) and not self._is_hotmail_mail(mail):
             mail = "2"
+        try:
+            threads = max(1, min(10, int(params.get("threads") or 1)))
+        except (TypeError, ValueError):
+            threads = 1
         return [
             str(py),
             "-u",
@@ -151,6 +172,8 @@ class GrokToolPlugin(BaseToolPlugin):
             str(count),
             "--backend",
             backend,
+            "--threads",
+            str(threads),
         ]
 
     def cwd(self, root: Path) -> Path:
@@ -158,6 +181,10 @@ class GrokToolPlugin(BaseToolPlugin):
 
     def env_overrides(self, params: dict[str, Any]) -> dict[str, str]:
         env: dict[str, str] = {}
+        try:
+            env["GROK_THREADS"] = str(max(1, min(10, int(params.get("threads") or 1))))
+        except (TypeError, ValueError):
+            env["GROK_THREADS"] = "1"
         if params.get("sub2api") is False or str(params.get("sub2api")).lower() in (
             "0",
             "false",

@@ -167,6 +167,17 @@ def get_status(url: str | None = None) -> dict[str, Any]:
         'manageable': endpoint['manageable'],
         'consecutive_failures': _consecutive_failures,
     }
+    if running:
+        try:
+            session = requests.Session()
+            session.trust_env = False
+            capacity = session.get(f'{probe_url}/health', timeout=2).json()
+            if isinstance(capacity, dict):
+                info['threads'] = int(capacity.get('threads') or 0)
+                info['available'] = int(capacity.get('available') or 0)
+        except Exception:
+            # Old solver versions have no /health; capacity is unknown.
+            pass
     if not running and _last_failure_reason:
         info['last_error'] = _last_failure_reason
     if not running and _consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
@@ -427,6 +438,19 @@ def ensure_started(settings: dict | None = None, **kwargs) -> dict[str, Any]:
         }
     status = get_status(settings.get('turnstile_solver_url'))
     if status.get('online'):
+        desired = kwargs.get('thread')
+        try:
+            desired = max(1, int(desired)) if desired is not None else None
+        except (TypeError, ValueError):
+            desired = None
+        current = status.get('threads')
+        if desired is not None and current != desired:
+            logger.info(
+                '[Solver] capacity change current=%s desired=%s — restarting',
+                current if current is not None else 'unknown',
+                desired,
+            )
+            return restart(settings, thread=desired)
         return status
     logger.info('[Solver] offline — auto-starting local Camoufox solver')
     return start(settings, **kwargs)

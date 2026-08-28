@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import email as email_lib
 import imaplib
 import json
@@ -185,7 +186,107 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "| auto=protocol rồi fallback Chrome"
         ),
     )
+    p.add_argument(
+        "--threads",
+        "-t",
+        type=int,
+        default=None,
+        help="Parallel workers for github HTTP backend (1-10)",
+    )
     return p
+
+
+def _successish(status: Any) -> bool:
+    st = str(status or "")
+    return (
+        st == "success"
+        or st.startswith("added_sub2api")
+        or st.startswith("success_sub2api")
+        or st.startswith("added_sub2api_untested")
+    )
+
+
+async def run_parallel_github(
+    config: dict[str, Any],
+    *,
+    batch: int,
+    threads: int,
+    until_stop: bool = False,
+) -> tuple[int, int]:
+    """Run real concurrent HTTP registrations; each worker owns one OS thread."""
+    from grokreg.protocol.worker import register_one_github
+
+    worker_count = max(1, min(10, int(threads)))
+    if not until_stop:
+        worker_count = min(worker_count, max(1, int(batch)))
+
+    counter_lock = asyncio.Lock()
+    next_attempt = 1
+    completed = 0
+    ok_n = 0
+    total_disp = 0 if until_stop else max(1, int(batch))
+    stop_file = ROOT / "data" / "STOP"
+
+    async def claim_attempt() -> int | None:
+        nonlocal next_attempt
+        async with counter_lock:
+            if not until_stop and next_attempt > batch:
+                return None
+            current = next_attempt
+            next_attempt += 1
+            return current
+
+    def run_one(worker_id: int, attempt: int):
+        # Config is copied because protocol registration normalizes provider keys.
+        worker_config = copy.deepcopy(config)
+        slog.set_task(worker_id, attempt, 999 if until_stop else batch)
+        slog.api_info(
+            "🧵",
+            f"Worker {worker_id}/{worker_count} bắt đầu account #{attempt}",
+        )
+        return register_one_github(worker_config)
+
+    async def worker(worker_id: int) -> None:
+        nonlocal completed, ok_n
+        while not is_stop_requested() and not stop_file.exists():
+            attempt = await claim_attempt()
+            if attempt is None:
+                return
+            try:
+                result = await asyncio.to_thread(run_one, worker_id, attempt)
+                status = result.status
+                if result.ok:
+                    slog.api_ok(
+                        f"Worker {worker_id} HTTP OK {result.email} "
+                        f"in {result.duration_sec:.1f}s → {status}"
+                    )
+            except StopRequested:
+                return
+            except Exception as exc:
+                log.exception("parallel worker %s crashed: %s", worker_id, exc)
+                slog.api_err(f"Worker {worker_id} crashed: {exc}")
+                status = f"error:{exc}"
+
+            async with counter_lock:
+                completed += 1
+                if _successish(status):
+                    ok_n += 1
+                progress_done = completed
+                progress_ok = ok_n
+            slog.progress(progress_done, total_disp, progress_ok)
+
+            if until_stop or completed < batch:
+                try:
+                    await interruptible_sleep(0.5 if _successish(status) else 1.5)
+                except StopRequested:
+                    return
+
+    slog.api_info(
+        "🧵",
+        f"MULTI-THREAD THẬT: {worker_count} worker HTTP chạy đồng thời",
+    )
+    await asyncio.gather(*(worker(i + 1) for i in range(worker_count)))
+    return ok_n, completed
 
 
 async def main(argv: list[str] | None = None) -> None:  # noqa: C901
@@ -266,7 +367,21 @@ async def main(argv: list[str] | None = None) -> None:  # noqa: C901
         batch = max(1, batch)
     dmin = float(config.get("inter_success_delay_min") or 45)
     dmax = float(config.get("inter_success_delay_max") or 90)
-    threads = max(1, int(os.environ.get("GROK_THREADS") or config.get("threads") or 1))
+    requested_threads = max(
+        1,
+        min(
+            10,
+            int(
+                args.threads
+                if args.threads is not None
+                else (os.environ.get("GROK_THREADS") or config.get("threads") or 1)
+            ),
+        ),
+    )
+    if backend_now in ("github", "http", "pure_http"):
+        threads = requested_threads if until_stop else min(requested_threads, batch)
+    else:
+        threads = 1
 
     stop_file = ROOT / "data" / "STOP"
 
@@ -290,6 +405,32 @@ async def main(argv: list[str] | None = None) -> None:  # noqa: C901
             "♾️",
             "Chạy liên tục đến khi ESC / Ctrl+C / data/STOP",
         )
+
+    if requested_threads > threads:
+        reason = (
+            f"Số lượng={batch} nên chỉ cần {threads} worker"
+            if backend_now in ("github", "http", "pure_http")
+            else f"Backend {backend_now} dùng Chrome/Castle nên ép 1 luồng"
+        )
+        slog.api_info("⚠️", reason)
+
+    if threads > 1 and backend_now in ("github", "http", "pure_http"):
+        ok_n, attempts = await run_parallel_github(
+            config,
+            batch=batch,
+            threads=threads,
+            until_stop=until_stop,
+        )
+        log.info(
+            "Parallel batch done: %s/%s success-ish with %s workers",
+            ok_n,
+            attempts,
+            threads,
+        )
+        slog.api_ok(
+            f"Kết thúc đa luồng: {ok_n} OK / {attempts} lượt · {threads} workers"
+        )
+        return
 
     ok_n = 0
     i = 0

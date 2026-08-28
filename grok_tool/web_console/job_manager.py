@@ -114,6 +114,7 @@ class JobManager:
         self.root = root
         # RLock: start/stop may call helpers that also take the lock
         self._lock = threading.RLock()
+        self._start_lock = threading.Lock()
         self._jobs: dict[str, Job] = {}
         self._current_id: Optional[str] = None
 
@@ -178,21 +179,24 @@ class JobManager:
             return total_removed
 
     def start(self, tool_id: str, params: dict[str, Any]) -> Job:
-        plugin = get_plugin(tool_id)
-        if plugin.meta.status == "coming_soon":
-            raise RuntimeError(f"Tool '{plugin.meta.name}' chưa sẵn sàng")
-        if hasattr(plugin, "preflight"):
-            plugin.preflight(params or {}, self.root)
+        with self._start_lock:
+            plugin = get_plugin(tool_id)
+            if plugin.meta.status == "coming_soon":
+                raise RuntimeError(f"Tool '{plugin.meta.name}' chưa sẵn sàng")
+            # Never restart/check shared services while another registration is live.
+            with self._lock:
+                cur = self._current_unlocked()
+                if cur is not None:
+                    raise RuntimeError(
+                        f"Đang có job chạy ({cur.tool_id}:{cur.id[:8]}). Hãy Stop trước."
+                    )
+            if hasattr(plugin, "preflight"):
+                plugin.preflight(params or {}, self.root)
 
-        with self._lock:
-            cur = self._current_unlocked()
-            if cur is not None:
-                raise RuntimeError(
-                    f"Đang có job chạy ({cur.tool_id}:{cur.id[:8]}). Hãy Stop trước."
-                )
-            job = Job(id=uuid.uuid4().hex[:12], tool_id=tool_id, params=dict(params or {}))
-            self._jobs[job.id] = job
-            self._current_id = job.id
+            with self._lock:
+                job = Job(id=uuid.uuid4().hex[:12], tool_id=tool_id, params=dict(params or {}))
+                self._jobs[job.id] = job
+                self._current_id = job.id
 
         t = threading.Thread(target=self._run, args=(job, plugin), daemon=True)
         t.start()

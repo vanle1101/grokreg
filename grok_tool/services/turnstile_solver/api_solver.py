@@ -150,7 +150,16 @@ class TurnstileAPIServer:
         self.app.before_serving(self._startup)
         self.app.route('/turnstile', methods=['GET'])(self.process_turnstile)
         self.app.route('/result', methods=['GET'])(self.get_result)
+        self.app.route('/health', methods=['GET'])(self.health)
         self.app.route('/')(self.index)
+
+    async def health(self):
+        """Machine-readable capacity used by the registration supervisor."""
+        return jsonify({
+            'ok': True,
+            'threads': self.thread_count,
+            'available': self.browser_pool.qsize(),
+        })
 
 
     async def _startup(self) -> None:

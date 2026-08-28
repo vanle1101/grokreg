@@ -47,6 +47,11 @@ const state = {
   hotmailPool: null,
 };
 
+// Keep each route mounted after its first render. Besides making navigation
+// instant, this preserves form values, scroll position and live log state.
+const routeViews = new Map();
+const routeLoads = new Map();
+
 function isHotmailMail(val) {
   const v = String(val ?? '').trim().toLowerCase();
   return v === '1' || v === 'hotmail' || v === 'outlook' || v === 'ms';
@@ -434,13 +439,18 @@ async function renderRegister(root) {
     if (tool.status === 'ready') stats = await getToolStats(tool.id);
   } catch (_) {}
   if (tool.id === 'grok') {
-    try {
-      const live = await fetch('/api/sub2api/pool/stats').then((r) => r.json());
-      if (live?.connected) {
-        stats.sub2api_live_total = live.total_accounts;
-        stats.sub2api_live_active = live.active_accounts;
-      }
-    } catch (_) {}
+    // Sub2API lives on the VPS and can take seconds to answer. Never block the
+    // local dashboard render on it; the live poll updates these values later.
+    fetch('/api/sub2api/pool/stats')
+      .then((r) => r.json())
+      .then((live) => {
+        if (!live?.connected || !root.isConnected) return;
+        const total = root.querySelector('#register-sub2-total');
+        const detail = root.querySelector('#register-sub2-detail');
+        if (total) total.textContent = live.total_accounts ?? '—';
+        if (detail) detail.textContent = `${stats.sub2api ?? 0} email unique · ${live.active_accounts ?? '—'} active`;
+      })
+      .catch(() => {});
   }
   if (['grok', 'heygen', 'capcut', 'zai', 'canva'].includes(tool.id)) {
     try {
@@ -481,8 +491,8 @@ async function renderRegister(root) {
         </div>` : `
         <div class="stat-card" title="Database Sub2API live; email unique đã đối chiếu: ${stats.sub2api ?? 0}">
           <div class="stat-label">Sub2API OK</div>
-          <div class="stat-value">${stats.sub2api_live_total ?? stats.sub2api ?? '—'}</div>
-          <div class="card-sub" style="margin-top:4px">${stats.sub2api ?? 0} email unique · ${stats.sub2api_live_active ?? '—'} active</div>
+          <div class="stat-value" id="register-sub2-total">${stats.sub2api_live_total ?? stats.sub2api ?? '—'}</div>
+          <div class="card-sub" id="register-sub2-detail" style="margin-top:4px">${stats.sub2api ?? 0} email unique · ${stats.sub2api_live_active ?? '—'} active</div>
         </div>`}
         <div class="stat-card bad" title="error* lần status cuối mỗi email">
           <div class="stat-label">Fail</div>
@@ -987,13 +997,7 @@ async function renderResults(root) {
     const r = await getToolResults(toolId, 150);
     rows = r.results || [];
     stats = await getToolStats(toolId);
-    if (toolId === 'grok') {
-      const live = await fetch('/api/sub2api/pool/stats').then((r) => r.json()).catch(() => null);
-      if (live?.connected) {
-        stats.sub2api_live_total = live.total_accounts;
-        stats.sub2api_live_active = live.active_accounts;
-      }
-    }
+    // Remote Sub2API totals are supplemental; local results must render first.
   } catch (e) {
     /* ignore fetch error */
   }
@@ -1264,16 +1268,8 @@ async function renderKeys(root) {
     safe_keys: { '10k': 910, '50k': 182, '100k': 91, '500k': 18, '1m': 9 },
   };
 
-  try {
-    const [resKeys, resPool] = await Promise.all([
-      listSub2apiKeys(1, 30).catch(() => ({ items: [] })),
-      fetch('/api/sub2api/pool/stats').then((r) => r.json()).catch(() => null),
-    ]);
-    recent = resKeys.items || [];
-    if (resPool && resPool.total_accounts > 0) {
-      pool = resPool;
-    }
-  } catch (_) {}
+  // Render controls immediately. Slow VPS data is filled by
+  // updateKeysRealtime() after the page is interactive.
 
   const packages = [
     { label: '1,000,000 Token (1M)', tokens: 1000000 },
@@ -1673,17 +1669,43 @@ async function route() {
   setActiveNav(known);
   const main = document.getElementById('main-content');
   if (!main) return;
-  main.innerHTML = `<div class="empty">Loading…</div>`;
-  try {
-    if (known === '#/register') await renderRegister(main);
-    else if (known === '#/results') await renderResults(main);
-    else if (known === '#/logs') await renderLogs(main);
-    else if (known === '#/keys') await renderKeys(main);
-    else if (known === '#/settings') await renderSettings(main);
-    else if (known === '#/tools') await renderTools(main);
-  } catch (e) {
-    main.innerHTML = `<div class="empty">${esc(e.message || e)}</div>`;
+
+  for (const [routeHash, view] of routeViews) {
+    view.hidden = routeHash !== known;
   }
+
+  let view = routeViews.get(known);
+  if (!view) {
+    view = document.createElement('div');
+    view.className = 'route-view';
+    view.dataset.routeView = known;
+    view.innerHTML = `<div class="empty">Loading…</div>`;
+    main.appendChild(view);
+    routeViews.set(known, view);
+  }
+  view.hidden = false;
+
+  if (routeLoads.has(known)) return routeLoads.get(known);
+  if (view.dataset.loaded === '1') return;
+
+  const load = (async () => {
+    try {
+      if (known === '#/register') await renderRegister(view);
+      else if (known === '#/results') await renderResults(view);
+      else if (known === '#/logs') await renderLogs(view);
+      else if (known === '#/keys') await renderKeys(view);
+      else if (known === '#/settings') await renderSettings(view);
+      else if (known === '#/tools') await renderTools(view);
+      view.dataset.loaded = '1';
+      if (known === '#/keys') void updateKeysRealtime();
+    } catch (e) {
+      view.innerHTML = `<div class="empty">${esc(e.message || e)}</div>`;
+    } finally {
+      routeLoads.delete(known);
+    }
+  })();
+  routeLoads.set(known, load);
+  return load;
 }
 
 /* ── Poll job ── */
@@ -1723,10 +1745,12 @@ async function pollJob() {
 }
 
 let _lastKeysPoll = 0;
+let _keysPollInFlight = false;
 async function updateKeysRealtime() {
   const now = Date.now();
-  if (now - _lastKeysPoll < 2000) return; // throttle 2s
+  if (_keysPollInFlight || now - _lastKeysPoll < 2000) return; // throttle + no overlapping VPS calls
   _lastKeysPoll = now;
+  _keysPollInFlight = true;
   try {
     const [resKeys, resPool] = await Promise.all([
       listSub2apiKeys(1, 30).catch(() => ({ items: [] })),
@@ -1798,7 +1822,10 @@ async function updateKeysRealtime() {
         </tr>`;
       }).join('');
     }
-  } catch (_) {}
+  } catch (_) {
+  } finally {
+    _keysPollInFlight = false;
+  }
 }
 
 async function boot() {

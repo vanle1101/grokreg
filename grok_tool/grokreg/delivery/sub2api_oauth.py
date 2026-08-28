@@ -16,6 +16,7 @@ import logging
 import random
 import re
 import time
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -25,6 +26,7 @@ log = logging.getLogger("grok_tool")
 
 ROOT = Path(__file__).resolve().parents[2]
 COUNTER_FILE = ROOT / "data" / "sub2api_name_counter.json"
+_COUNTER_LOCK = threading.Lock()
 
 LABELS = {
     "create_account": [
@@ -368,18 +370,19 @@ async def click_continue_email_form(tab: Any) -> bool:
 def next_account_name(cfg: dict[str, Any]) -> str:
     prefix = (cfg.get("name_prefix") or "grok free").strip()
     start = int(cfg.get("start_number") or 1)
-    n = start
-    try:
-        if COUNTER_FILE.exists():
-            data = json.loads(COUNTER_FILE.read_text(encoding="utf-8"))
-            n = max(int(data.get("next") or start), start)
-    except Exception:
+    with _COUNTER_LOCK:
         n = start
-    name = f"{prefix} {n:03d}"
-    try:
-        COUNTER_FILE.write_text(json.dumps({"next": n + 1}, indent=2), encoding="utf-8")
-    except Exception:
-        pass
+        try:
+            if COUNTER_FILE.exists():
+                data = json.loads(COUNTER_FILE.read_text(encoding="utf-8"))
+                n = max(int(data.get("next") or start), start)
+        except Exception:
+            n = start
+        name = f"{prefix} {n:03d}"
+        try:
+            COUNTER_FILE.write_text(json.dumps({"next": n + 1}, indent=2), encoding="utf-8")
+        except Exception:
+            pass
     return name
 
 

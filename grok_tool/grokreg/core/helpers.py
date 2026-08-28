@@ -13,6 +13,7 @@ import re
 import string
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -86,30 +87,33 @@ def resolve_password(config: dict[str, Any]) -> str:
 
 _RECENT_NAMES_PATH = ROOT / "data" / "recent_names.json"
 _RECENT_NAMES_MAX = 80
+_RECENT_NAMES_LOCK = threading.RLock()
 
 
 def _load_recent_names() -> list[str]:
-    try:
-        if _RECENT_NAMES_PATH.exists():
-            data = json.loads(_RECENT_NAMES_PATH.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                return [str(x) for x in data][-_RECENT_NAMES_MAX:]
-    except Exception:
-        pass
+    with _RECENT_NAMES_LOCK:
+        try:
+            if _RECENT_NAMES_PATH.exists():
+                data = json.loads(_RECENT_NAMES_PATH.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    return [str(x) for x in data][-_RECENT_NAMES_MAX:]
+        except Exception:
+            pass
     return []
 
 
 def _save_recent_name(full: str) -> None:
-    try:
-        recent = _load_recent_names()
-        recent.append(full)
-        recent = recent[-_RECENT_NAMES_MAX:]
-        _RECENT_NAMES_PATH.write_text(
-            json.dumps(recent, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-    except Exception:
-        pass
+    with _RECENT_NAMES_LOCK:
+        try:
+            recent = _load_recent_names()
+            recent.append(full)
+            recent = recent[-_RECENT_NAMES_MAX:]
+            _RECENT_NAMES_PATH.write_text(
+                json.dumps(recent, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
 
 def random_name(
@@ -127,29 +131,31 @@ def random_name(
     if not lasts:
         lasts = list(LAST_NAMES)
 
-    recent = set(_load_recent_names())
-    # try several times for a fresh combo
-    for _ in range(60):
+    with _RECENT_NAMES_LOCK:
+        recent = set(_load_recent_names())
+        # try several times for a fresh combo
+        for _ in range(60):
+            first = random.choice(firsts)
+            last = random.choice(lasts)
+            if first.lower() == last.lower():
+                continue
+            full = f"{first} {last}"
+            if full in recent:
+                continue
+            _save_recent_name(full)
+            return first, last
+
+        # fallback: any non-matching pair
         first = random.choice(firsts)
-        last = random.choice(lasts)
-        if first.lower() == last.lower():
-            continue
+        last = random.choice([x for x in lasts if x.lower() != first.lower()] or lasts)
         full = f"{first} {last}"
-        if full in recent:
-            continue
         _save_recent_name(full)
         return first, last
-
-    # fallback: any non-matching pair
-    first = random.choice(firsts)
-    last = random.choice([x for x in lasts if x.lower() != first.lower()] or lasts)
-    full = f"{first} {last}"
-    _save_recent_name(full)
-    return first, last
 
 
 # Set per register_one so save_account can update temp-mail failover stats
 _CURRENT_EMAIL_PROVIDER: str = ""
+_LEDGER_LOCK = threading.RLock()
 
 
 def remember_account_time(
@@ -164,24 +170,25 @@ def remember_account_time(
         return ""
     stamp = (when or "").strip() or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     path = Path(__file__).resolve().parents[2] / "data" / "account_times.json"
-    data: dict[str, str] = {}
-    if path.exists():
+    with _LEDGER_LOCK:
+        data: dict[str, str] = {}
+        if path.exists():
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    data = {str(k).lower(): str(v) for k, v in raw.items() if v}
+            except Exception:
+                data = {}
+        if not overwrite and data.get(em):
+            return data[em]
+        data[em] = stamp
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                data = {str(k).lower(): str(v) for k, v in raw.items() if v}
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
         except Exception:
-            data = {}
-    if not overwrite and data.get(em):
-        return data[em]
-    data[em] = stamp
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-    except Exception:
-        pass
+            pass
     return stamp
 
 
@@ -190,9 +197,10 @@ def save_account(path: Path, email: str, password: str, status: str) -> None:
     Internal ledger only (source for Google Sheet rebuild).
     User-facing result destination is Google Sheet — not this file.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(f"{email}|{password}|{status}\n")
+    with _LEDGER_LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{email}|{password}|{status}\n")
     log.debug("Internal ledger → %s | %s", email, status)
     st = str(status or "")
     if st.startswith("added_sub2api") or st == "success" or st.startswith(

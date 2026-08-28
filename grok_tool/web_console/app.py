@@ -7,8 +7,11 @@ Run:  python -m web_console.app
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import sys
+import threading
+import time
 import webbrowser
 from pathlib import Path
 from typing import Any, Optional
@@ -31,6 +34,35 @@ TEMPLATES = Path(__file__).resolve().parent / "templates"
 
 app = FastAPI(title="Nexus Ops", version=__version__)
 jobs = JobManager(ROOT)
+
+_api_cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
+_api_cache_lock = threading.RLock()
+_api_cache_key_locks: dict[tuple[Any, ...], threading.Lock] = {}
+
+
+def ttl_cache(seconds: float):
+    """Small in-process cache for slow read-only VPS proxy endpoints."""
+    def decorate(fn):
+        @functools.wraps(fn)
+        def wrapped(*args, **kwargs):
+            key = (fn.__name__, args, tuple(sorted(kwargs.items())))
+            now = time.monotonic()
+            with _api_cache_lock:
+                cached = _api_cache.get(key)
+                if cached and now - cached[0] < seconds:
+                    return cached[1]
+                key_lock = _api_cache_key_locks.setdefault(key, threading.Lock())
+            with key_lock:
+                with _api_cache_lock:
+                    cached = _api_cache.get(key)
+                    if cached and time.monotonic() - cached[0] < seconds:
+                        return cached[1]
+                value = fn(*args, **kwargs)
+                with _api_cache_lock:
+                    _api_cache[key] = (time.monotonic(), value)
+            return value
+        return wrapped
+    return decorate
 
 if STATIC.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
@@ -452,6 +484,7 @@ def generate_sub2api_keys(req: GenerateKeysRequest):
 
 
 @app.get("/api/sub2api/pool/stats")
+@ttl_cache(8)
 def get_sub2api_pool_stats():
     import requests
     from grokreg.core.config import load_config
@@ -571,6 +604,7 @@ def get_sub2api_pool_stats():
 
 
 @app.get("/api/sub2api/keys/list")
+@ttl_cache(10)
 def list_sub2api_keys(page: int = 1, page_size: int = 50):
     import requests
     from grokreg.core.config import load_config
@@ -594,7 +628,8 @@ def list_sub2api_keys(page: int = 1, page_size: int = 50):
         data = kr.json().get("data", {})
 
         items = data.get("items", [])
-        for item in items:
+
+        def enrich(item):
             key_str = item.get("key")
             if key_str:
                 try:
@@ -606,6 +641,14 @@ def list_sub2api_keys(page: int = 1, page_size: int = 50):
                         item["actual_remain_pct"] = cd.get("remain_pct")
                 except Exception:
                     pass
+            return item
+
+        # Checking every key sequentially made one page take N × 2 seconds.
+        # A modest pool keeps the endpoint responsive without flooding the VPS.
+        if items:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(8, len(items))) as executor:
+                list(executor.map(enrich, items))
         return data
     except Exception:
         return {"items": [], "total": 0}

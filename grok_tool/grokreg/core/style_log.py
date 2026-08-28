@@ -39,28 +39,27 @@ def _ensure_utf8_stdio() -> None:
 _ensure_utf8_stdio()
 
 _lock = threading.Lock()
-_ctx = {
-    "task_id": 1,
-    "cur": 1,
-    "total": 1,
-    "email": "",
-}
+_ctx = threading.local()
+
+
+def _ctx_get(name: str, default: Any) -> Any:
+    return getattr(_ctx, name, default)
 
 
 def set_task(task_id: int, cur: int, total: int, email: str = "") -> None:
-    _ctx["task_id"] = max(1, int(task_id))
-    _ctx["cur"] = max(1, int(cur))
-    _ctx["total"] = max(1, int(total))
+    _ctx.task_id = max(1, int(task_id))
+    _ctx.cur = max(1, int(cur))
+    _ctx.total = max(1, int(total))
     if email:
-        _ctx["email"] = email
+        _ctx.email = email
 
 
 def set_email(email: str) -> None:
-    _ctx["email"] = email or ""
+    _ctx.email = email or ""
 
 
 def _tid() -> int:
-    return int(_ctx.get("task_id") or 1)
+    return int(_ctx_get("task_id", 1) or 1)
 
 
 def _out(line: str) -> None:
@@ -90,12 +89,12 @@ def banner(n_acc: int, threads: int = 1, mode: Optional[str] = None) -> None:
 
 def task_header(email: str = "") -> None:
     """1] Task #1/1 · Email: ..."""
-    em = email or _ctx.get("email") or ""
+    em = email or _ctx_get("email", "") or ""
     if em:
-        _ctx["email"] = em
+        _ctx.email = em
     tid = _tid()
-    cur = int(_ctx.get("cur") or 1)
-    total = int(_ctx.get("total") or 1)
+    cur = int(_ctx_get("cur", 1) or 1)
+    total = int(_ctx_get("total", 1) or 1)
     prefix = f"{tid}]"
     email_col = f"{Fore.MAGENTA}{em}{Style.RESET_ALL}"
     _out(
