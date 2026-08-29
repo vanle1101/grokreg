@@ -15,7 +15,11 @@ export async function api(path, options = {}) {
       (data && (data.detail || data.message || data.error)) ||
       res.statusText ||
       'Request failed';
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    const error = new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    error.status = res.status;
+    error.detail = data?.detail ?? null;
+    error.response = data;
+    throw error;
   }
   return data;
 }

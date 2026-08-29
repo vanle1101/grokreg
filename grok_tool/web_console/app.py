@@ -9,10 +9,13 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
+import os
 import sys
 import threading
 import time
+import uuid
 import webbrowser
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,6 +31,7 @@ if str(ROOT) not in sys.path:
 from web_console import __version__
 from web_console.job_manager import JobManager
 from web_console.plugins import all_plugins, get_plugin
+from web_console.sub2api_sales_client import CapacityUnavailable, Sub2APISalesClient
 
 STATIC = Path(__file__).resolve().parent / "static"
 TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -112,6 +116,33 @@ class GenerateKeysRequest(BaseModel):
     count: int = 1
     name_prefix: str = "Grok"
     group_name: str = "Grok"
+    request_id: str = ""
+
+
+def get_sub2api_sales_settings() -> tuple[int, int, str]:
+    from grokreg.core.config import load_config
+
+    cfg = load_config()
+    s2 = cfg.get("sub2api") if isinstance(cfg.get("sub2api"), dict) else {}
+    base_url = str(s2.get("sub2api_url") or cfg.get("sub2api_url") or "https://grokapi.duckdns.org").rstrip("/")
+    group_ids = s2.get("group_ids") if isinstance(s2.get("group_ids"), list) else []
+    group_id = int(os.getenv("SUB2API_GROK_GROUP_ID") or s2.get("sales_group_id") or (group_ids[0] if group_ids else 34))
+    user_id = int(os.getenv("SUB2API_SALES_USER_ID") or s2.get("sales_user_id") or 0)
+    return group_id, user_id, base_url
+
+
+def get_sub2api_sales_client() -> Sub2APISalesClient:
+    from grokreg.core.config import load_config
+
+    cfg = load_config()
+    s2 = cfg.get("sub2api") if isinstance(cfg.get("sub2api"), dict) else {}
+    _, _, base_url = get_sub2api_sales_settings()
+    admin_api_key = os.getenv("SUB2API_ADMIN_API_KEY") or s2.get("sub2api_api_token") or cfg.get("sub2api_token") or ""
+    sales_secret = os.getenv("SUB2API_SALES_SECRET") or s2.get("sales_secret") or ""
+    try:
+        return Sub2APISalesClient(base_url, str(admin_api_key), str(sales_secret))
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="Chưa cấu hình Sub2API Sales API cho web console") from exc
 
 
 def resolve_brand_icon(tool_id: str, explicit: str = "") -> str:
@@ -398,165 +429,110 @@ def update_config_api(body: ConfigUpdateBody):
 
 @app.post("/api/sub2api/keys/generate")
 def generate_sub2api_keys(req: GenerateKeysRequest):
-    import requests
-    from grokreg.core.config import load_config
+    if req.token_amount < 1_000 or req.count < 1 or req.count > 100:
+        raise HTTPException(status_code=400, detail="Token tối thiểu 1.000 và số key từ 1 đến 100")
+    client = get_sub2api_sales_client()
+    group_id, user_id, base_url = get_sub2api_sales_settings()
+    if user_id <= 0:
+        raise HTTPException(status_code=503, detail="Chưa cấu hình SUB2API_SALES_USER_ID")
 
-    cfg = load_config()
-    s2 = cfg.get("sub2api") if isinstance(cfg.get("sub2api"), dict) else {}
-    base_url = (s2.get("sub2api_url") or cfg.get("sub2api_url") or "https://grokapi.duckdns.org").rstrip("/")
-    user = s2.get("sub2api_user") or cfg.get("sub2api_user")
-    pwd = s2.get("sub2api_pass") or cfg.get("sub2api_password")
+    count = req.count
+    total_tokens = req.token_amount * count
+    request_id = req.request_id.strip() or f"console-{uuid.uuid4().hex}"
+    token_display = f"{req.token_amount // 1_000_000}m" if req.token_amount % 1_000_000 == 0 else f"{req.token_amount // 1000}k"
+    items = []
+    for index in range(1, count + 1):
+        suffix = f"_{index:02d}" if count > 1 else ""
+        items.append({
+            "user_id": user_id,
+            "name": f"{req.name_prefix}_{token_display}{suffix}".strip(),
+            "requested_tokens": req.token_amount,
+        })
 
-    if not user or not pwd:
-        raise HTTPException(status_code=400, detail="Chưa cấu hình Sub2API User / Password trong Settings!")
-
-    # 1. Login
     try:
-        r = requests.post(f"{base_url}/api/v1/auth/login", json={"email": user, "password": pwd}, timeout=10)
-        login_data = r.json()
-        if login_data.get("code") != 0:
-            raise Exception(login_data.get("message") or "Đăng nhập Sub2API thất bại")
-        auth_token = login_data["data"]["access_token"]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi đăng nhập Sub2API: {e}")
+        reservation = client.reserve(
+            request_id,
+            "batch_new_key",
+            group_id,
+            total_tokens,
+            datetime.now(timezone.utc) + timedelta(minutes=15),
+        )
+    except CapacityUnavailable as exc:
+        raise HTTPException(status_code=409, detail={
+            "code": "INSUFFICIENT_GROK_CAPACITY",
+            "requested_tokens": total_tokens,
+            "available_tokens": exc.available_tokens,
+            "suggested_tokens": exc.suggested_tokens,
+            "minimum_tokens": exc.minimum_tokens,
+        }) from None
 
-    headers = {"Authorization": f"Bearer {auth_token}"}
-
-    # 2. Resolve group ID
-    target_group = req.group_name or s2.get("group") or "Grok"
-    group_id = 34  # default Grok group
+    reservation_id = int(reservation.get("id") or 0)
     try:
-        gr = requests.get(f"{base_url}/api/v1/admin/groups", headers=headers, timeout=10)
-        if gr.status_code == 200:
-            items = gr.json().get("data", {}).get("items", [])
-            for g in items:
-                if g.get("name", "").strip().lower() == target_group.strip().lower():
-                    group_id = g["id"]
-                    break
-    except Exception:
-        pass
+        fulfilled = client.fulfill_batch(
+            reservation_id,
+            group_id,
+            items,
+            idempotency_key=request_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail={
+            "code": "BATCH_FULFILL_RETRYABLE",
+            "message": "Chưa tạo key nào. Có thể thử lại an toàn bằng cùng request_id.",
+            "request_id": request_id,
+            "reservation_id": reservation_id,
+        }) from exc
 
-    # 3. Calculate quota (1 USD = 500,000 tokens => quota = tokens / 500000.0)
-    quota_usd = round(req.token_amount / 500000.0, 6)
-    created_keys = []
-    errors = []
-
-    count = max(1, min(100, req.count))
-    token_display = f"{req.token_amount // 1000}k" if req.token_amount >= 1000 else str(req.token_amount)
-
-    for i in range(1, count + 1):
-        suffix = f"_{i:02d}" if count > 1 else ""
-        key_name = f"{req.name_prefix}_{token_display}{suffix}".strip()
-        payload = {
-            "name": key_name,
-            "group_id": group_id,
-            "quota": quota_usd,
-            "expires_in_days": None,
-        }
-        try:
-            kr = requests.post(f"{base_url}/api/v1/keys", headers=headers, json=payload, timeout=10)
-            kd = kr.json()
-            if kd.get("code") == 0:
-                k_data = kd["data"]
-                created_keys.append({
-                    "id": k_data.get("id"),
-                    "name": k_data.get("name"),
-                    "key": k_data.get("key"),
-                    "tokens": req.token_amount,
-                    "tokens_display": token_display,
-                    "quota_usd": quota_usd,
-                    "group": target_group,
-                    "created_at": k_data.get("created_at"),
-                })
-            else:
-                errors.append(f"Tạo key #{i} lỗi: {kd.get('message')}")
-        except Exception as e:
-            errors.append(f"Tạo key #{i} lỗi kết nối: {e}")
-
+    api_keys = fulfilled.get("api_keys") or []
+    if len(api_keys) != count:
+        raise HTTPException(status_code=502, detail={
+            "code": "BATCH_RESULT_MISMATCH",
+            "message": "Sub2API không trả đủ batch; không hiển thị kết quả một phần.",
+            "request_id": request_id,
+        })
+    quota_usd = round(req.token_amount / 500_000.0, 8)
+    created_keys = [{
+        **key,
+        "tokens": req.token_amount,
+        "tokens_display": token_display,
+        "quota_usd": key.get("quota", quota_usd),
+        "group": req.group_name or "Grok",
+    } for key in api_keys]
+    with _api_cache_lock:
+        _api_cache.clear()
     return {
-        "ok": len(created_keys) > 0,
+        "ok": True,
         "base_url": f"{base_url}/v1",
         "keys": created_keys,
-        "errors": errors,
-        "count": len(created_keys),
+        "errors": [],
+        "count": count,
         "token_amount": req.token_amount,
+        "request_id": request_id,
+        "reservation_id": reservation_id,
     }
 
 
 @app.get("/api/sub2api/pool/stats")
 @ttl_cache(8)
 def get_sub2api_pool_stats():
-    import requests
-    from grokreg.core.config import load_config
-
-    cfg = load_config()
-    s2 = cfg.get("sub2api") if isinstance(cfg.get("sub2api"), dict) else {}
-    base_url = (s2.get("sub2api_url") or cfg.get("sub2api_url") or "https://grokapi.duckdns.org").rstrip("/")
-    user = s2.get("sub2api_user") or cfg.get("sub2api_user")
-    pwd = s2.get("sub2api_pass") or cfg.get("sub2api_password")
-
-    if not user or not pwd:
-        return {
-            "connected": False,
-            "total_accounts": 0,
-            "active_accounts": 0,
-            "total_tokens": 0,
-            "remaining_tokens": 0,
-            "remaining_percent": 100,
-        }
-
     try:
-        r = requests.post(f"{base_url}/api/v1/auth/login", json={"email": user, "password": pwd}, timeout=6)
-        auth_token = r.json().get("data", {}).get("access_token")
-        if not auth_token:
-            raise Exception("No token")
-        headers = {"Authorization": f"Bearer {auth_token}"}
-
-        # 1. Get Accounts count
-        ar = requests.get(f"{base_url}/api/v1/admin/accounts?page=1&page_size=100", headers=headers, timeout=6)
-        ad = ar.json().get("data", {})
-        total_accounts = ad.get("total", 0)
-        items = ad.get("items", [])
-
-        # 2. Get Groups for quota info
-        gr = requests.get(f"{base_url}/api/v1/admin/groups", headers=headers, timeout=6)
-        gd = gr.json().get("data", {}).get("items", [])
-        grok_group = next((g for g in gd if g.get("name", "").lower() == "grok"), None)
-        active_accounts = grok_group.get("active_account_count", total_accounts) if grok_group else total_accounts
-
-        # Quy ước: 1 acc Grok Free = 50,000 tokens / rolling window
-        token_per_acc = 50000
-        total_max_tokens = total_accounts * token_per_acc
-
-        # 3. Get exact key usage from keys list
-        used_tokens_estimated = 0
-        for it in items:
-            status = it.get("status", "active")
-            if status != "active":
-                used_tokens_estimated += token_per_acc
-
-        used_tokens_from_keys = 0
-        try:
-            kr = requests.get(f"{base_url}/api/v1/keys?page=1&page_size=100", headers=headers, timeout=6)
-            kd = kr.json().get("data", {}).get("items", [])
-            total_key_quota_used_usd = sum(float(k.get("quota_used") or 0) for k in kd)
-            used_tokens_from_keys = round(total_key_quota_used_usd * 500000)
-        except Exception:
-            pass
-
-        total_used_tokens = used_tokens_estimated + used_tokens_from_keys
-        remaining_tokens = max(0, total_max_tokens - total_used_tokens)
-        remaining_percent = round((remaining_tokens / total_max_tokens * 100.0), 2) if total_max_tokens > 0 else 100.0
-
+        group_id, _, base_url = get_sub2api_sales_settings()
+        capacity = get_sub2api_sales_client().availability(group_id)
+        remaining_tokens = int(capacity.get("available_tokens") or 0)
+        total_max_tokens = int(capacity.get("capacity_tokens") or 0)
+        remaining_percent = round(remaining_tokens / total_max_tokens * 100, 2) if total_max_tokens else 0.0
         return {
             "connected": True,
             "base_url": base_url,
-            "total_accounts": total_accounts,
-            "active_accounts": active_accounts,
-            "token_per_acc": token_per_acc,
+            "total_accounts": int(capacity.get("active_accounts") or 0),
+            "active_accounts": int(capacity.get("active_accounts") or 0),
+            "token_per_acc": int(capacity.get("tokens_per_active_account") or 0),
             "total_max_tokens": total_max_tokens,
             "remaining_tokens": remaining_tokens,
-            "used_tokens": total_used_tokens,
+            "suggested_tokens": int(capacity.get("suggested_tokens") or 0),
+            "minimum_tokens": int(capacity.get("minimum_tokens") or 0),
+            "outstanding_tokens": int(capacity.get("outstanding_tokens") or 0),
+            "reserved_tokens": int(capacity.get("reserved_tokens") or 0),
+            "used_tokens": max(0, total_max_tokens - remaining_tokens),
             "remaining_percent": remaining_percent,
             "safe_keys": {
                 "10k": remaining_tokens // 10000,
@@ -566,40 +542,19 @@ def get_sub2api_pool_stats():
                 "1m": remaining_tokens // 1000000,
             }
         }
-    except Exception as e:
-        # Fallback to local accounts.txt if Sub2API is unreachable
-        local_ok = 0
-        acc_file = Path(__file__).resolve().parent / "data" / "accounts.txt"
-        if not acc_file.exists():
-            acc_file = Path(__file__).resolve().parents[1] / "data" / "accounts.txt"
-        if acc_file.exists():
-            try:
-                for line in acc_file.read_text(encoding="utf-8", errors="ignore").splitlines():
-                    if "|" in line:
-                        st = line.split("|")[-1].strip().lower()
-                        if "success" in st or "added_sub2api" in st:
-                            local_ok += 1
-            except Exception:
-                pass
-        token_per_acc = 50000
-        total_tokens = max(local_ok, 0) * token_per_acc
+    except Exception as exc:
         return {
             "connected": False,
-            "error": str(e),
-            "total_accounts": local_ok,
-            "active_accounts": local_ok,
-            "token_per_acc": token_per_acc,
-            "total_max_tokens": total_tokens,
-            "remaining_tokens": total_tokens,
+            "error": str(exc),
+            "total_accounts": 0,
+            "active_accounts": 0,
+            "token_per_acc": 0,
+            "total_max_tokens": 0,
+            "remaining_tokens": 0,
+            "suggested_tokens": 0,
             "used_tokens": 0,
-            "remaining_percent": 100.0,
-            "safe_keys": {
-                "10k": total_tokens // 10000,
-                "50k": total_tokens // 50000,
-                "100k": total_tokens // 100000,
-                "500k": total_tokens // 500000,
-                "1m": total_tokens // 1000000,
-            },
+            "remaining_percent": 0.0,
+            "safe_keys": {"10k": 0, "50k": 0, "100k": 0, "500k": 0, "1m": 0},
         }
 
 

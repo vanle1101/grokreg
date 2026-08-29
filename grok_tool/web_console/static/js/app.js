@@ -1298,6 +1298,51 @@ async function renderKeys(root) {
   ];
 
   let selectedTokens = 1000000;
+  let pendingGenerateRequest = null;
+
+  const chooseCapacityAmount = (detail, keyCount) => new Promise((resolve) => {
+    const available = Math.max(0, Number(detail?.available_tokens || 0));
+    const minimum = Math.max(1000, Number(detail?.minimum_tokens || 1000));
+    const suggestedTotal = Math.min(available, Math.max(0, Number(detail?.suggested_tokens || 0)));
+    const suggestedPerKey = Math.floor(suggestedTotal / keyCount / 1000) * 1000;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(2,6,23,.78);display:grid;place-items:center;padding:20px';
+    overlay.innerHTML = `
+      <div class="card" style="width:min(520px,100%);box-shadow:0 24px 80px rgba(0,0,0,.5)">
+        <div class="card-title" style="color:#f59e0b">⚠️ Kho không đủ cho toàn bộ yêu cầu</div>
+        <div class="card-sub" style="margin-top:10px;line-height:1.7">
+          Đang yêu cầu <b>${Number(detail?.requested_tokens || 0).toLocaleString()}</b> token.<br>
+          Kho chính xác còn <b style="color:#38bdf8">${available.toLocaleString()}</b> token.<br>
+          Hệ thống sẽ không tạo hoặc giao thiếu một phần.
+        </div>
+        <div class="field" style="margin-top:16px">
+          <label>Token cho mỗi key (${keyCount} key)</label>
+          <input id="capacity-custom-tokens" type="number" min="${minimum}" max="${Math.floor(available / keyCount)}" step="1000" value="${suggestedPerKey || ''}" />
+          <div class="hint">Tổng phải ≤ ${available.toLocaleString()} token; tối thiểu ${minimum.toLocaleString()} token/key.</div>
+        </div>
+        <div class="btn-row" style="justify-content:flex-end;margin-top:18px">
+          <button class="btn btn-ghost" data-action="cancel">Hủy</button>
+          ${suggestedPerKey >= minimum ? `<button class="btn btn-secondary" data-action="suggested">Dùng mức làm tròn ${suggestedPerKey.toLocaleString()}/key</button>` : ''}
+          <button class="btn btn-primary" data-action="custom">Dùng số đã nhập</button>
+        </div>
+      </div>`;
+    const close = (value) => { overlay.remove(); resolve(value); };
+    overlay.addEventListener('click', (event) => {
+      const action = event.target?.dataset?.action;
+      if (action === 'cancel') close(null);
+      if (action === 'suggested') close(suggestedPerKey);
+      if (action === 'custom') {
+        const value = Math.floor(Number(overlay.querySelector('#capacity-custom-tokens')?.value || 0));
+        if (value < minimum || value * keyCount > available) {
+          toast(`Số token phải từ ${minimum.toLocaleString()} và tổng không vượt ${available.toLocaleString()}.`, 'err');
+          return;
+        }
+        close(value);
+      }
+    });
+    document.body.appendChild(overlay);
+    overlay.querySelector('#capacity-custom-tokens')?.focus();
+  });
 
   const pct = pool.remaining_percent ?? 100;
   const pctColor = pct > 60 ? '#10b981' : (pct > 25 ? '#f59e0b' : '#ef4444');
@@ -1605,6 +1650,13 @@ curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${k}" | bash`;
     const count = Math.max(1, Math.min(100, Number(root.querySelector('#key-count')?.value || 1)));
     const prefix = root.querySelector('#key-prefix')?.value || 'Grok';
 
+    const signature = `${tokens}:${count}:${prefix}`;
+    if (!pendingGenerateRequest || pendingGenerateRequest.signature !== signature) {
+      pendingGenerateRequest = {
+        signature,
+        requestId: `console-${crypto.randomUUID?.() || (Date.now() + '-' + Math.random().toString(16).slice(2))}`,
+      };
+    }
     btn.disabled = true;
     btn.textContent = '⏳ Đang tạo key trên Sub2API...';
     try {
@@ -1613,6 +1665,7 @@ curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${k}" | bash`;
         count: count,
         name_prefix: prefix,
         group_name: 'Grok',
+        request_id: pendingGenerateRequest.requestId,
       });
 
       if (!res.ok || !res.keys?.length) {
@@ -1620,6 +1673,7 @@ curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${k}" | bash`;
       }
 
       toast(`Đã tạo thành công ${res.keys.length} Key (${(tokens >= 1000000 ? (tokens/1000000) + 'M' : tokens.toLocaleString())} tokens)!`, 'ok');
+      pendingGenerateRequest = null;
 
       const container = root.querySelector('#key-result-container');
       const allKeyTexts = res.keys.map((k) => k.key).join('\n');
@@ -1668,7 +1722,20 @@ curl -fsSL "https://grokapi.duckdns.org/setup-linux?key=${k}" | bash`;
         downloadFile(`grok_keys_${tokens}_${Date.now()}.txt`, allFormatTexts);
       });
     } catch (e) {
-      toast(`Lỗi tạo key: ${e.message}`, 'err');
+      if (e.status === 409 && e.detail?.code === 'INSUFFICIENT_GROK_CAPACITY') {
+        const adjusted = await chooseCapacityAmount(e.detail, count);
+        if (adjusted !== null) {
+          const input = root.querySelector('#key-tokens');
+          if (input) {
+            input.value = adjusted;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          pendingGenerateRequest = null;
+          toast(`Đã điều chỉnh về ${adjusted.toLocaleString()} token/key. Bấm Tạo Key để xác nhận.`, 'ok');
+        }
+      } else {
+        toast(`Lỗi tạo key: ${e.message}`, 'err');
+      }
     } finally {
       if (btn) {
         btn.disabled = false;
