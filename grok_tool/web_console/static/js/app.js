@@ -1354,25 +1354,16 @@ async function renderKeys(root) {
         <div class="stat-card info">
           <div class="stat-label">🔋 Tổng Token Khả Dụng</div>
           <div class="stat-value" id="stat-pool-remaining" style="font-size: 26px; color: #10b981;">${(pool.remaining_tokens || 0).toLocaleString()}</div>
-          <div class="card-sub" id="stat-pool-sub" style="margin-top: 4px; color: #38bdf8; font-weight: 600;">
-            ≈ ${((pool.remaining_tokens || 0) / 1000000).toFixed(1)} Triệu Tokens (${pool.token_per_acc ? (pool.token_per_acc / 1000).toFixed(0) + 'k' : '50k'}/acc)
-          </div>
         </div>
 
         <div class="stat-card ok">
           <div class="stat-label">🌐 Kho Acc Kết Nối</div>
           <div class="stat-value" id="stat-pool-accs" style="font-size: 26px;">${pool.active_accounts || pool.total_accounts || 0}</div>
-          <div class="card-sub" id="stat-pool-accs-sub" style="margin-top: 4px;">
-            ${pool.connected ? '<span style="color:#10b981;">● Sub2API Live</span>' : '<span style="color:#f59e0b;">● Kho Local</span>'} · ${pool.total_accounts || 0} Acc Active
-          </div>
         </div>
 
         <div class="stat-card">
           <div class="stat-label">📦 Sức Chứa Key (1M)</div>
           <div class="stat-value" id="stat-pool-capacity" style="font-size: 26px; color: #a855f7;">${Math.floor((pool.remaining_tokens || 0) / 1000000).toLocaleString()}</div>
-          <div class="card-sub" id="stat-pool-capacity-sub" style="margin-top: 4px;">
-            ${Math.floor((pool.remaining_tokens || 0) / 2000000).toLocaleString()} Key 2M · ${Math.floor((pool.remaining_tokens || 0) / 5000000).toLocaleString()} Key 5M · ${Math.floor((pool.remaining_tokens || 0) / 10000000).toLocaleString()} Key 10M
-          </div>
         </div>
 
         <div class="stat-card">
@@ -1850,16 +1841,8 @@ async function updateKeysRealtime() {
       const elRemain = document.getElementById('stat-pool-remaining');
       if (elRemain) elRemain.textContent = (pool.remaining_tokens || 0).toLocaleString();
 
-      const elSub = document.getElementById('stat-pool-sub');
-      if (elSub) elSub.innerHTML = `≈ ${((pool.remaining_tokens || 0) / 1000000).toFixed(1)} Triệu Tokens (${pool.token_per_acc ? (pool.token_per_acc / 1000).toFixed(0) + 'k' : '50k'}/acc)`;
-
       const elAcc = document.getElementById('stat-pool-accs');
       if (elAcc) elAcc.textContent = (pool.active_accounts || pool.total_accounts || 0).toLocaleString();
-
-      const elAccSub = document.getElementById('stat-pool-accs-sub');
-      if (elAccSub) {
-        elAccSub.innerHTML = `${pool.connected ? '<span style="color:#10b981;">● Sub2API Live</span>' : '<span style="color:#f59e0b;">● Kho Local</span>'} · ${(pool.active_accounts || pool.total_accounts || 0).toLocaleString()} Acc Active`;
-      }
 
       const elBadge = document.getElementById('badge-total-accs');
       if (elBadge) {
@@ -1868,9 +1851,6 @@ async function updateKeysRealtime() {
 
       const elCap = document.getElementById('stat-pool-capacity');
       if (elCap) elCap.textContent = (pool.safe_keys?.['10k'] || Math.floor((pool.remaining_tokens || 0) / 10000)).toLocaleString();
-
-      const elCapSub = document.getElementById('stat-pool-capacity-sub');
-      if (elCapSub) elCapSub.textContent = `${(pool.safe_keys?.['50k'] || Math.floor((pool.remaining_tokens || 0) / 50000)).toLocaleString()} Key 50k · ${(pool.safe_keys?.['100k'] || Math.floor((pool.remaining_tokens || 0) / 100000)).toLocaleString()} Key 100k`;
 
       const elPct = document.getElementById('stat-pool-pct');
       if (elPct) {
