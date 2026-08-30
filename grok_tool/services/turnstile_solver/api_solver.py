@@ -711,21 +711,74 @@ class TurnstileAPIServer:
         page = await context.new_page()
         return context, page
 
-    async def _return_browser_to_pool(self, index, browser, browser_config):
-        """Safely return a browser instance to the pool if still connected."""
+    async def _create_single_browser(self, index, config):
         try:
-            # camoufox 的 Browser 不一定有 is_connected；有则检查，没有则直接归还
-            if hasattr(browser, 'is_connected'):
+            if self.browser_type in ['chromium', 'chrome', 'msedge'] and hasattr(self, 'playwright') and self.playwright:
+                browser_args = [
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-infobars",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--window-position=-32000,-32000",
+                    "--force-device-scale-factor=1",
+                ]
+                if self.headless:
+                    browser_args.extend(["--headless=new", "--disable-gpu", "--mute-audio"])
+                if config and config.get('useragent'):
+                    browser_args.append(f"--user-agent={config['useragent']}")
+                return await self.playwright.chromium.launch(
+                    channel=self.browser_type,
+                    headless=self.headless,
+                    args=browser_args
+                )
+            elif self.browser_type == "camoufox":
+                try:
+                    from camoufox.async_api import AsyncCamoufox
+                    cf = AsyncCamoufox(headless=self.headless, geoip=True)
+                    return await cf.start()
+                except Exception as e:
+                    logger.error(f"Camoufox launch failed: {e}")
+        except Exception as exc:
+            logger.error(f"Error creating new browser instance for index {index}: {exc}")
+        return None
+
+    async def _return_browser_to_pool(self, index, browser, browser_config):
+        """Safely return a browser instance to the pool, or recreate it if dead."""
+        try:
+            is_dead = False
+            if browser is None:
+                is_dead = True
+            elif hasattr(browser, 'is_connected'):
                 if not browser.is_connected():
-                    if self.debug:
-                        logger.warning(f"Browser {index}: Browser disconnected, not returning to pool")
+                    is_dead = True
+
+            if is_dead:
+                logger.warning(f"Browser {index}: Connection lost. Recreating fresh browser instance...")
+                try:
+                    if browser is not None:
+                        await browser.close()
+                except Exception:
+                    pass
+                new_browser = await self._create_single_browser(index, browser_config)
+                if new_browser:
+                    await self.browser_pool.put((index, new_browser, browser_config))
+                    logger.info(f"Browser {index}: Fresh browser successfully recreated and returned to pool")
                     return
+                else:
+                    logger.error(f"Browser {index}: Failed to recreate browser instance")
+                    return
+
             await self.browser_pool.put((index, browser, browser_config))
             if self.debug:
                 logger.debug(f"Browser {index}: Browser returned to pool")
         except Exception as e:
-            if self.debug:
-                logger.warning(f"Browser {index}: Error returning browser to pool: {str(e)}")
+            logger.warning(f"Browser {index}: Error returning/recreating browser: {str(e)}")
+            try:
+                new_browser = await self._create_single_browser(index, browser_config)
+                if new_browser:
+                    await self.browser_pool.put((index, new_browser, browser_config))
+            except Exception:
+                pass
 
     async def _solve_turnstile(
         self,
