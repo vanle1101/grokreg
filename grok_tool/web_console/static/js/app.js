@@ -1277,12 +1277,12 @@ async function renderKeys(root) {
   let recent = [];
   let pool = {
     connected: true,
-    total_accounts: 182,
-    active_accounts: 182,
-    total_max_tokens: 9100000,
-    remaining_tokens: 9100000,
+    total_accounts: 8548,
+    active_accounts: 8526,
+    total_max_tokens: 426300000,
+    remaining_tokens: 426300000,
     remaining_percent: 100,
-    safe_keys: { '10k': 910, '50k': 182, '100k': 91, '500k': 18, '1m': 9 },
+    safe_keys: { '10k': 42630, '50k': 8526, '100k': 4263, '500k': 852, '1m': 426 },
   };
 
   // Render controls immediately. Slow VPS data is filled by
@@ -1854,7 +1854,17 @@ async function updateKeysRealtime() {
       if (elSub) elSub.innerHTML = `≈ ${((pool.remaining_tokens || 0) / 1000000).toFixed(1)} Triệu Tokens (${pool.token_per_acc ? (pool.token_per_acc / 1000).toFixed(0) + 'k' : '50k'}/acc)`;
 
       const elAcc = document.getElementById('stat-pool-accs');
-      if (elAcc) elAcc.textContent = pool.active_accounts || pool.total_accounts || 0;
+      if (elAcc) elAcc.textContent = (pool.active_accounts || pool.total_accounts || 0).toLocaleString();
+
+      const elAccSub = document.getElementById('stat-pool-accs-sub');
+      if (elAccSub) {
+        elAccSub.innerHTML = `${pool.connected ? '<span style="color:#10b981;">● Sub2API Live</span>' : '<span style="color:#f59e0b;">● Kho Local</span>'} · ${(pool.active_accounts || pool.total_accounts || 0).toLocaleString()} Acc Active`;
+      }
+
+      const elBadge = document.getElementById('badge-total-accs');
+      if (elBadge) {
+        elBadge.textContent = `Grok (${(pool.total_accounts || 0).toLocaleString()}+ Acc)`;
+      }
 
       const elCap = document.getElementById('stat-pool-capacity');
       if (elCap) elCap.textContent = (pool.safe_keys?.['10k'] || Math.floor((pool.remaining_tokens || 0) / 10000)).toLocaleString();
