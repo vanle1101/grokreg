@@ -50,10 +50,15 @@ def main() -> None:
         browser_name=args.browser,
         browser_version=args.version,
     )
-    try:
-        app.run(host=args.host, port=int(args.port))
-    except (KeyboardInterrupt, SystemExit):
-        pass
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=args.host,
+        port=int(args.port),
+        log_level="info",
+        access_log=False,
+    )
 
 
 if __name__ == '__main__':
