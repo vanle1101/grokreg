@@ -80,7 +80,7 @@ def _out(line: str) -> None:
 
 def banner(n_acc: int, threads: int = 1, mode: Optional[str] = None) -> None:
     """Start-of-run line."""
-    mode = mode or "Ẩn cửa sổ Off-Screen (Bypass Cloudflare 100%)"
+    mode = mode or "Ẩn cửa sổ Off-Screen (solver Turnstile đang bật)"
     text = (
         f"Bắt đầu: {n_acc} Acc | {threads} Luồng song song | Mode: {mode}"
     )

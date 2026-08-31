@@ -86,4 +86,4 @@ from grokreg.cli.app import (  # noqa: F401
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))

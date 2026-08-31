@@ -289,7 +289,7 @@ async def run_parallel_github(
     return ok_n, completed
 
 
-async def main(argv: list[str] | None = None) -> None:  # noqa: C901
+async def main(argv: list[str] | None = None) -> int:  # noqa: C901
     args = build_arg_parser().parse_args(argv)
     cli = args.provider or args.choice
     provider = pick_email_provider(cli)
@@ -314,15 +314,6 @@ async def main(argv: list[str] | None = None) -> None:  # noqa: C901
         or (config.get("protocol") or {}).get("mode")
         or "browser"
     ).strip().lower()
-    if backend_now in ("protocol", "auto", "http", "pure_http", "github", "castle"):
-        try:
-            from services.solver_manager import start_async
-
-            start_async(config)
-            log.info("Turnstile solver: auto-start background (:5072)")
-        except Exception as e:
-            log.debug("solver auto-start: %s", e)
-
     # Optional per-worker overrides (stress_test.py / multi-instance)
     if os.environ.get("GROK_CHROME_PORT", "").strip():
         config["chrome_debug_port"] = int(os.environ["GROK_CHROME_PORT"])
@@ -383,6 +374,15 @@ async def main(argv: list[str] | None = None) -> None:  # noqa: C901
     else:
         threads = 1
 
+    if backend_now in ("protocol", "auto", "http", "pure_http", "github", "castle"):
+        try:
+            from services.solver_manager import start_async
+
+            start_async(config, thread=threads)
+            log.info("Turnstile solver: auto-start background (:5072), threads=%s", threads)
+        except Exception as e:
+            log.debug("solver auto-start: %s", e)
+
     stop_file = ROOT / "data" / "STOP"
 
     log.info(
@@ -427,10 +427,16 @@ async def main(argv: list[str] | None = None) -> None:  # noqa: C901
             attempts,
             threads,
         )
+        failed_n = max(0, attempts - ok_n)
+        if failed_n:
+            slog.api_err(
+                f"Kết thúc đa luồng: {ok_n} OK / {failed_n} FAILED / {attempts} lượt · {threads} workers"
+            )
+            return 1
         slog.api_ok(
             f"Kết thúc đa luồng: {ok_n} OK / {attempts} lượt · {threads} workers"
         )
-        return
+        return 0
 
     ok_n = 0
     i = 0
@@ -585,12 +591,20 @@ async def main(argv: list[str] | None = None) -> None:  # noqa: C901
 
     if until_stop:
         log.info("Loop done: %s success-ish / %s attempts", ok_n, i)
+        if i and ok_n < i:
+            slog.api_err(f"Kết thúc loop: {ok_n} OK / {i - ok_n} FAILED / {i} lượt")
+            return 1
         slog.api_ok(f"Kết thúc loop: {ok_n} OK / {i} lượt")
     else:
         log.info("Batch done: %s/%s success-ish", ok_n, batch)
+        failed_n = max(0, i - ok_n)
+        if failed_n:
+            slog.api_err(f"Kết thúc batch: {ok_n} OK / {failed_n} FAILED / {i} lượt")
+            return 1
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))
 
 
