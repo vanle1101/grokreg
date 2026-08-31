@@ -1829,13 +1829,6 @@ async function route() {
 }
 
 /* ── Poll job ── */
-function visibleRouteElement(selector) {
-  // Register and Logs views both contain elements such as #log-box. Using
-  // getElementById here can select the hidden, previously-rendered view.
-  const visible = document.querySelector(`.route-view:not([hidden]) ${selector}`);
-  return visible || document.querySelector(selector);
-}
-
 async function pollJob() {
   try {
     const curTool = state.selectedTool || '';
