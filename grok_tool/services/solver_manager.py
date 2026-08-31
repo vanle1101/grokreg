@@ -61,6 +61,13 @@ def settings_from_config(config: dict | None = None) -> dict[str, Any]:
     out['yescaptcha_key'] = str(
         cfg.get('yescaptcha_key') or ts.get('yescaptcha_key') or ''
     ).strip()
+    try:
+        out['turnstile_threads'] = max(
+            1,
+            int(cfg.get('turnstile_threads') or ts.get('threads') or 1),
+        )
+    except (TypeError, ValueError):
+        out['turnstile_threads'] = 1
     if not str(out.get('browser_proxy') or '').strip():
         out['browser_proxy'] = str(ts.get('proxy') or cfg.get('proxy') or '').strip()
     return out
@@ -142,8 +149,13 @@ def is_running(url: str | None = None) -> bool:
     try:
         session = requests.Session()
         session.trust_env = False
-        response = session.get(f'{target}/', timeout=2, allow_redirects=False)
-        return response.status_code < 500
+        response = session.get(f'{target}/health', timeout=2, allow_redirects=False)
+        if response.status_code in {404, 405}:
+            response = session.get(f'{target}/', timeout=2, allow_redirects=False)
+            return response.status_code < 500
+        response.raise_for_status()
+        payload = response.json() or {}
+        return payload.get('ok') is True and int(payload.get('threads') or 0) > 0
     except Exception:
         return False
 
@@ -265,13 +277,16 @@ def start(
     browser_type = (
         browser_type
         or str(os.environ.get('GROK_REGISTER_SOLVER_BROWSER', '') or '').strip()
-        or 'chrome'
+        or 'camoufox'
     )
     try:
         thread = int(
             thread
             if thread is not None
-            else os.environ.get('GROK_REGISTER_SOLVER_THREADS', '1')
+            else os.environ.get(
+                'GROK_REGISTER_SOLVER_THREADS',
+                str(settings.get('turnstile_threads') or 1),
+            )
         )
     except (TypeError, ValueError):
         thread = 1
