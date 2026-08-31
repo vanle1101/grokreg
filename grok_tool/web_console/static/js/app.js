@@ -696,7 +696,12 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
   });
 
   document.getElementById('btn-start')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-start');
     try {
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span style="display:inline-block;animation:spin 0.8s linear infinite;margin-right:6px">⏳</span> Đang khởi động…';
+      }
       // collect form
       root.querySelectorAll('[data-key]').forEach((el) => {
         const key = el.dataset.key;
@@ -708,6 +713,7 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
         const raw = String(state.form.codes || '').trim();
         if (!raw) {
           toast('Dán mã redeem vào ô Mã redeem (mỗi dòng 1 mã)', 'err');
+          if (btn) { btn.disabled = false; btn.textContent = 'Start'; }
           return;
         }
       } else if (isHotmailMail(state.form.mail)) {
@@ -717,6 +723,7 @@ MOI_MA_KHAC">${esc(state.form[f.key] ?? f.default ?? '')}</textarea>
         const n = Number(state.hotmailPool?.slots || state.hotmailPool?.count || 0);
         if (!n) {
           toast('Pool Hotmail trống / hết slot — import acc rồi Start', 'err');
+          if (btn) { btn.disabled = false; btn.textContent = 'Start'; }
           return;
         }
         state.form.count = n;
