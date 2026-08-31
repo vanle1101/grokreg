@@ -24,6 +24,10 @@ for stream_name in ('stdout', 'stderr'):
 # Allow `python services/turnstile_solver/start.py` without installing a package.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import asyncio
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
+
 from api_solver import create_app, parse_args  # noqa: E402
 
 
@@ -46,8 +50,13 @@ def main() -> None:
         browser_name=args.browser,
         browser_version=args.version,
     )
-    app.run(host=args.host, port=int(args.port))
+    config = Config()
+    config.bind = [f"{args.host}:{args.port}"]
+    config.startup_timeout = 300.0
+    config.shutdown_timeout = 60.0
+    asyncio.run(serve(app, config))
 
 
 if __name__ == '__main__':
     main()
+
