@@ -277,7 +277,7 @@ def start(
     browser_type = (
         browser_type
         or str(os.environ.get('GROK_REGISTER_SOLVER_BROWSER', '') or '').strip()
-        or 'chrome'
+        or 'camoufox'
     )
     try:
         thread = int(
@@ -353,7 +353,7 @@ def start(
                 'cwd': os.path.dirname(_solver_start_script()),
             }
             if os.name == 'nt':
-                popen_kw.update(winhide.kwargs(new_group=True))
+                popen_kw.update(winhide.kwargs(new_group=True, detached=True))
             else:
                 popen_kw['start_new_session'] = True
             _proc = subprocess.Popen(cmd, **popen_kw)

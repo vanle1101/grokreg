@@ -20,6 +20,10 @@ from grokreg.core.helpers import (
 )
 from grokreg.core.runtime import ROOT, log
 import grokreg.core.style_log as slog
+from grokreg.captcha.turnstile_solver_client import (
+    ExternalTurnstileSolver,
+    TurnstileSolveError,
+)
 from grokreg.mail.mail_api import EmailSession, MailApiClient
 from grokreg.mail.providers import (
     AzpopMailProvider,
@@ -65,8 +69,6 @@ def _kick_solver_async(config: dict[str, Any]) -> None:
 
 def _ensure_solver(config: dict[str, Any]) -> None:
     """Block until local solver / YesCaptcha is usable, or raise."""
-    from grokreg.captcha.turnstile_solver_client import ExternalTurnstileSolver
-
     provider = ExternalTurnstileSolver.from_config(config)
     if provider.available():
         return
@@ -106,8 +108,6 @@ def _ensure_solver(config: dict[str, Any]) -> None:
 
 
 def _solve_turnstile(config: dict[str, Any], *, site_key: str, url: str) -> str:
-    from grokreg.captcha.turnstile_solver_client import ExternalTurnstileSolver
-
     _ensure_solver(config)
     provider = ExternalTurnstileSolver.from_config(config)
     if not provider.available():
@@ -116,6 +116,11 @@ def _solve_turnstile(config: dict[str, Any], *, site_key: str, url: str) -> str:
             "(protocol bắt buộc external solver, giống đối thủ)"
         )
     return provider.solve(url=url, site_key=site_key)
+
+
+def _turnstile_future_timeout(config: dict[str, Any]) -> int:
+    """Keep the outer Future budget longer than the provider's own deadline."""
+    return ExternalTurnstileSolver.from_config(config).timeout + 15
 
 
 def register_one_github(config: dict[str, Any]) -> ProtocolResult:
@@ -241,7 +246,7 @@ def register_one_protocol(config: dict[str, Any], *, castle: bool = False) -> Pr
                     url=SIGNUP_URL,
                 )
                 otp_raw = otp_fut.result(timeout=max(40, timeout_otp + 20))
-                token = ts_fut.result(timeout=max(30, timeout_otp))
+                token = ts_fut.result(timeout=_turnstile_future_timeout(config))
         else:
             log.info("[protocol] send_email_code…")
             slog.api_ok("HTTP CreateEmail (GitHub — 0 Chrome)")
@@ -268,7 +273,7 @@ def register_one_protocol(config: dict[str, Any], *, castle: bool = False) -> Pr
                     url=SIGNUP_URL,
                 )
                 otp_raw = otp_fut.result(timeout=max(40, timeout_otp + 10))
-                token = ts_fut.result(timeout=max(30, timeout_otp))
+                token = ts_fut.result(timeout=_turnstile_future_timeout(config))
 
         if not otp_raw:
             status = "error:protocol_otp_timeout"
@@ -375,6 +380,15 @@ def register_one_protocol(config: dict[str, Any], *, castle: bool = False) -> Pr
             detail="protocol",
         )
 
+    except TurnstileSolveError as e:
+        email = email_session.address if email_session else ""
+        status = f"error:protocol_turnstile:{str(e)[:120]}"
+        log.error("[protocol] Turnstile: %s", e)
+        if email:
+            save_account(save_path, email, password, status)
+        return ProtocolResult(
+            False, status, email, password, duration_sec=time.time() - t0, detail=str(e)
+        )
     except ProtocolEnvironmentError as e:
         email = email_session.address if email_session else ""
         status = f"error:protocol_env:{e.reason}:{str(e)[:80]}"

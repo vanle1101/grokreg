@@ -36,13 +36,30 @@ def probe_solver(solver_url: str = DEFAULT_SOLVER_URL, timeout: float = 2.0) -> 
     session.trust_env = False  # don't ride system HTTP_PROXY for loopback
     t0 = time.perf_counter()
     try:
-        r = session.get(f"{url}/", timeout=timeout, allow_redirects=False)
+        health = session.get(f"{url}/health", timeout=timeout, allow_redirects=False)
         ms = int((time.perf_counter() - t0) * 1000)
+        if health.status_code in (404, 405):
+            # Compatibility with older solver builds which only expose `/`.
+            root = session.get(f"{url}/", timeout=timeout, allow_redirects=False)
+            return {
+                "online": root.status_code < 500,
+                "status_code": root.status_code,
+                "latency_ms": ms,
+                "url": url,
+                "legacy": True,
+            }
+        health.raise_for_status()
+        payload = health.json() or {}
+        threads = int(payload.get("threads") or 0)
+        online = payload.get("ok") is True and threads > 0
         return {
-            "online": r.status_code < 500,
-            "status_code": r.status_code,
+            "online": online,
+            "status_code": health.status_code,
             "latency_ms": ms,
             "url": url,
+            "threads": threads,
+            "available": int(payload.get("available") or 0),
+            **({"error": "solver health reports no browser capacity"} if not online else {}),
         }
     except Exception as e:
         return {
@@ -121,10 +138,15 @@ class ExternalTurnstileSolver:
         )
         if self.proxy:
             create_url += f"&proxy={quote(self.proxy, safe='')}"
+        create_url += f"&timeout={self.timeout}"
         try:
             create = self._http.get(create_url, timeout=30)
             create.raise_for_status()
-            task_id = (create.json() or {}).get("taskId")
+            create_payload = create.json() or {}
+            self._raise_payload_error(create_payload, context="create")
+            task_id = create_payload.get("taskId")
+        except TurnstileSolveError:
+            raise
         except Exception as exc:
             raise TurnstileSolveError(f"local solver create failed: {exc}") from exc
         if not task_id:
@@ -147,14 +169,13 @@ class ExternalTurnstileSolver:
                 )
                 result.raise_for_status()
                 payload = result.json() or {}
+                self._raise_payload_error(payload, context=f"task {task_id}")
                 token = (payload.get("solution") or {}).get("token")
                 if token:
                     return str(token).strip()
                 # some solvers return value directly
                 if payload.get("value") and len(str(payload["value"])) > 40:
                     return str(payload["value"]).strip()
-                if payload.get("status") in ("error", "failed"):
-                    raise TurnstileSolveError(f"solver failed: {payload}")
             except TurnstileSolveError:
                 raise
             except Exception as exc:
@@ -169,6 +190,27 @@ class ExternalTurnstileSolver:
                     )
             time.sleep(min(self.poll_interval, max(0.0, deadline - time.monotonic())))
         raise TurnstileSolveError(f"local solver timed out after {self.timeout}s")
+
+    @staticmethod
+    def _raise_payload_error(payload: dict[str, Any], *, context: str) -> None:
+        """Translate the local solver's HTTP-200 error schema into an exception."""
+        status = str(payload.get("status") or "").strip().lower()
+        value = str(payload.get("value") or "").strip()
+        try:
+            error_id = int(payload.get("errorId") or 0)
+        except (TypeError, ValueError):
+            error_id = 1
+        if not error_id and status not in {"error", "failed"} and value != "CAPTCHA_FAIL":
+            return
+        code = str(payload.get("errorCode") or status or "ERROR_CAPTCHA_UNSOLVABLE")
+        description = str(
+            payload.get("errorDescription")
+            or payload.get("error")
+            or payload.get("message")
+            or value
+            or "solver failed"
+        )
+        raise TurnstileSolveError(f"local solver {context} failed: {code}: {description}")
 
     def _solve_yescaptcha(self, website: str, site_key: str) -> str:
         task: dict[str, Any] = {

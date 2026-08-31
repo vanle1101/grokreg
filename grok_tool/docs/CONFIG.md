@@ -78,6 +78,7 @@ Biến môi trường:
 | `turnstile.mode` | `auto` |
 | `turnstile.solver_url` | `http://127.0.0.1:5072` |
 | `turnstile.timeout_sec` | Timeout mỗi lần solve |
+| `turnstile.threads` | Số browser worker của local solver; CLI/web tự đồng bộ theo số worker đăng ký |
 | `turnstile.yescaptcha_key` | Để trống nếu chỉ dùng solver local |
 | `turnstile.sitekey` | Để trống = tự detect |
 | `cf_max_retries` / `cf_wait_sec` | Cloudflare browser path |

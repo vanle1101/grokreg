@@ -27,13 +27,15 @@ def startupinfo() -> Any | None:
     return si
 
 
-def kwargs(*, new_group: bool = False, extra_flags: int = 0) -> dict[str, Any]:
+def kwargs(*, new_group: bool = False, detached: bool = False, extra_flags: int = 0) -> dict[str, Any]:
     """Merge into subprocess.Popen/run: ``**winhide.kwargs()``."""
     if os.name != "nt":
         return {}
     flags = creationflags(extra_flags)
     if new_group:
         flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    if detached:
+        flags |= getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
     return {"creationflags": flags, "startupinfo": startupinfo()}
 
 
