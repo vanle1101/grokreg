@@ -38,6 +38,7 @@ class JobProgressTest(unittest.TestCase):
                 "failed": 1,
                 "percent": 2,
                 "continuous": False,
+                "avg_seconds_per_account": None,
             },
         )
         self.assertEqual(snapshot["logs"], [])
@@ -49,6 +50,13 @@ class JobProgressTest(unittest.TestCase):
 
         self.assertEqual(job.clear_logs(), 1)
         self.assertEqual(job.snapshot()["progress"]["completed"], 3)
+
+    def test_success_average_updates_from_live_worker_logs(self):
+        job = Job(id="average-test", tool_id="grok", params={"count": 0})
+        job.append_log("Worker 1 HTTP OK first@example.com in 20.0s → added_sub2api")
+        self.assertEqual(job.snapshot()["progress"]["avg_seconds_per_account"], 20.0)
+        job.append_log("Worker 2 HTTP OK second@example.com in 30.0s → added_sub2api")
+        self.assertEqual(job.snapshot()["progress"]["avg_seconds_per_account"], 25.0)
 
     def test_progress_emitter_contract(self):
         with patch.dict("os.environ", {"GROK_WEB_CONSOLE": "1"}), patch.object(

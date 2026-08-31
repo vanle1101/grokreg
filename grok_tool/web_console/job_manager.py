@@ -23,6 +23,10 @@ from .plugins.base import BaseToolPlugin
 _PROGRESS_RE = re.compile(
     r"@@JOB_PROGRESS\s+completed=(\d+)\s+total=(\d+)\s+ok=(\d+)\s+failed=(\d+)"
 )
+_SUCCESS_DURATION_RE = re.compile(
+    r"(?:HTTP|Protocol)\s+OK\b.*?\bin\s+(\d+(?:\.\d+)?)s\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -43,8 +47,14 @@ class Job:
     progress_total: int = 0
     progress_ok: int = 0
     progress_failed: int = 0
+    success_duration_total: float = 0.0
+    success_duration_count: int = 0
 
     def append_log(self, line: str) -> None:
+        duration = _SUCCESS_DURATION_RE.search(line)
+        if duration:
+            self.success_duration_total += float(duration.group(1))
+            self.success_duration_count += 1
         progress = _PROGRESS_RE.search(line)
         if progress:
             self.progress_completed = int(progress.group(1))
@@ -105,6 +115,11 @@ class Job:
                 "failed": self.progress_failed,
                 "percent": percent,
                 "continuous": target == 0,
+                "avg_seconds_per_account": (
+                    round(self.success_duration_total / self.success_duration_count, 1)
+                    if self.success_duration_count
+                    else None
+                ),
             },
         }
 

@@ -171,6 +171,15 @@ function formatElapsed(job) {
   return [hours, minutes, remaining].map((value) => String(value).padStart(2, '0')).join(':');
 }
 
+function formatAverageAccountTime(job) {
+  const seconds = Number(job?.progress?.avg_seconds_per_account);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'Đang tính…';
+  if (seconds < 60) return `${seconds.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} giây/acc`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.round(seconds % 60);
+  return `${minutes}p ${remaining}s/acc`;
+}
+
 function progressContent(job) {
   const p = normalizedProgress(job);
   if (!p) return '';
@@ -195,6 +204,7 @@ function progressContent(job) {
     <div class="progress-detail">
       <span class="progress-ok">${p.ok} thành công</span>
       <span class="progress-fail">${p.failed} thất bại</span>
+      <span class="progress-average">TB <strong>${formatAverageAccountTime(job)}</strong></span>
       <span class="progress-elapsed">${active ? 'Đang chạy' : 'Tổng thời gian'} <strong>${formatElapsed(job)}</strong></span>
     </div>`;
 }

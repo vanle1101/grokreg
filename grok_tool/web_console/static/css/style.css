@@ -226,6 +226,7 @@ html:not(.dark-theme) .log-console .line:hover{background:#f8fafc}html:not(.dark
 .progress-ok::before,.progress-fail::before{width:5px;height:5px;box-shadow:none}
 .progress-elapsed{font-size:10.5px;color:var(--muted)}
 .progress-elapsed strong{font-size:10.5px;font-weight:650;color:var(--fg-2)}
+.progress-average{white-space:nowrap;color:var(--fg-2);font-size:11.5px}.progress-average strong{color:var(--primary);font-weight:750}
 .dark-theme .progress-live-pill{border-color:rgba(96,165,250,.28);background:rgba(96,165,250,.1);color:#93c5fd}
 .dark-theme .progress-live-pill::before{background:#60a5fa}
 
