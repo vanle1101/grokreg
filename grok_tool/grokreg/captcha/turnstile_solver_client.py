@@ -77,13 +77,13 @@ class ExternalTurnstileSolver:
         solver_url: str = DEFAULT_SOLVER_URL,
         yescaptcha_key: str = "",
         proxy: str = "",
-        timeout: int = 90,
+        timeout: int = 60,
         poll_interval: float = 2.0,
     ):
         self.solver_url = (solver_url or DEFAULT_SOLVER_URL).rstrip("/")
         self.yescaptcha_key = (yescaptcha_key or "").strip()
         self.proxy = (proxy or "").strip()
-        self.timeout = max(20, int(timeout or 90))
+        self.timeout = max(20, int(timeout or 60))
         self.poll_interval = max(0.5, float(poll_interval or 2.0))
         self._http = requests.Session()
         self._http.trust_env = False
@@ -102,7 +102,7 @@ class ExternalTurnstileSolver:
                 ts.get("yescaptcha_key") or cfg.get("yescaptcha_key") or ""
             ),
             proxy=str(ts.get("proxy") or cfg.get("proxy") or ""),
-            timeout=int(ts.get("timeout_sec") or 90),
+            timeout=int(ts.get("timeout_sec") or 60),
         )
 
     def available(self) -> bool:

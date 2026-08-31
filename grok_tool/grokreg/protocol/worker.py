@@ -127,10 +127,16 @@ def _solve_turnstile(config: dict[str, Any], *, site_key: str, url: str) -> str:
             # Camoufox can occasionally return UNSOLVABLE under a large
             # parallel batch. Recreate the task once while the OTP is still
             # valid instead of immediately burning the email/account attempt.
-            if attempt >= retries or "ERROR_CAPTCHA_UNSOLVABLE" not in str(exc):
+            error_text = str(exc)
+            retryable = (
+                "ERROR_CAPTCHA_UNSOLVABLE" in error_text
+                or "timed out" in error_text.lower()
+            )
+            if attempt >= retries or not retryable:
                 raise
             log.warning(
-                "[turnstile] CAPTCHA unsolvable — retry %s/%s with a fresh task",
+                "[turnstile] CAPTCHA task failed (%s) — retry %s/%s with a fresh task",
+                "timeout" if "timed out" in error_text.lower() else "unsolvable",
                 attempt + 1,
                 retries,
             )
@@ -334,6 +340,17 @@ def register_one_protocol(config: dict[str, Any], *, castle: bool = False) -> Pr
         response = backend.submit_signup(payload, SIGNUP_URL, token)
         result = backend.extract_sso(response)
         sso = (result.sso or "").strip() or read_sso_cookie_from_session(session)
+        # The signup response may arrive before xAI finishes setting the SSO
+        # cookie/redirect chain. Retry extraction briefly; never resubmit the
+        # signup payload or consume another CAPTCHA token.
+        for sso_retry in range(2):
+            if sso:
+                break
+            time.sleep(1.5)
+            result = backend.extract_sso(response)
+            sso = (result.sso or "").strip() or read_sso_cookie_from_session(session)
+            if sso:
+                log.info("[protocol] SSO appeared after retry %s", sso_retry + 1)
         if not sso:
             status = "error:protocol_no_sso"
             save_account(save_path, email, password, status)
