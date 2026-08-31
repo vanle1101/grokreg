@@ -175,8 +175,8 @@ function progressContent(job) {
   const status = String(job?.status || 'idle').toLowerCase();
   const active = ['running', 'pending', 'stopping'].includes(status);
   const countText = p.continuous
-    ? `${p.completed} tài khoản đã xử lý <small>· liên tục</small>`
-    : `${p.completed} / ${p.total} tài khoản`;
+    ? `${p.ok} tài khoản thành công <small>· liên tục</small>`
+    : `${p.ok} / ${p.total} tài khoản thành công`;
   let stateText = `${p.percent ?? 0}%`;
   if (p.continuous) stateText = active ? '<span class="progress-live-pill">ĐANG CHẠY</span>' : '<span class="progress-rest-pill">ĐÃ DỪNG</span>';
   const width = p.continuous ? Math.min(100, p.completed * 5) : p.percent;
@@ -1014,16 +1014,38 @@ async function renderResults(root) {
     const r = await getToolResults(toolId, 150);
     rows = r.results || [];
     stats = await getToolStats(toolId);
-    // Remote Sub2API totals are supplemental; local results must render first.
   } catch (e) {
     /* ignore fetch error */
+  }
+
+  const okRows = rows.filter((r) => r.ok);
+  const failRows = rows.filter((r) => !r.ok);
+  let currentFilter = 'ok'; // Default to showing only success accounts
+
+  function renderTableRows(filter) {
+    let list = rows;
+    if (filter === 'ok') list = okRows;
+    else if (filter === 'fail') list = failRows;
+
+    if (!list.length) {
+      return `<tr><td colspan="3" class="empty">Không có tài khoản nào (${filter === 'ok' ? 'chưa có acc thành công' : 'không có dữ liệu'})</td></tr>`;
+    }
+    return list
+      .map(
+        (r) => `<tr>
+          <td class="mono">${esc(r.email)}</td>
+          <td class="mono">${esc(r.password)}</td>
+          <td>${statusTag(r.status, r.ok)}</td>
+        </tr>`
+      )
+      .join('');
   }
 
   root.innerHTML = `
     <div class="page">
       <div class="page-banner">
         <div><div class="hero-kicker"><i></i> Data vault</div><h2>Kho dữ liệu tài khoản</h2><p>Dữ liệu tài khoản và trạng thái xử lý mới nhất của ${esc(toolId)}.</p></div>
-        <span class="page-banner-mark">${rows.length} RECORDS</span>
+        <span class="page-banner-mark" id="results-count-mark">${okRows.length} SUCCESS</span>
       </div>
       <div class="grid-4">
         <div class="stat-card info"><div class="stat-label">Email unique</div><div class="stat-value">${stats.unique_emails ?? stats.total ?? 0}</div>
@@ -1036,32 +1058,27 @@ async function renderResults(root) {
       </div>
       ${stats.blurb ? `<div class="card-sub">${esc(stats.blurb)}</div>` : ''}
       <div class="card">
-        <div class="card-head">
+        <div class="card-head" style="flex-wrap:wrap;gap:12px">
           <div>
             <div class="card-title">Accounts · ${esc(toolId)}</div>
-            <div class="card-sub">data/accounts.txt — mỗi dòng = 1 lượt thử (email có thể lặp)</div>
+            <div class="card-sub">Hiển thị danh sách tài khoản đã xử lý</div>
           </div>
-          <button class="btn btn-ghost" id="btn-copy-ok">Copy Reg OK</button>
+          <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+            <div class="filter-tabs" style="display:inline-flex;background:rgba(255,255,255,0.06);padding:3px;border-radius:8px;gap:2px">
+              <button class="btn btn-xs ${currentFilter === 'ok' ? 'btn-primary' : 'btn-ghost'}" id="filter-ok" style="font-size:12px;padding:4px 10px;border-radius:6px">🟢 Chỉ Thành Công (${okRows.length})</button>
+              <button class="btn btn-xs ${currentFilter === 'all' ? 'btn-primary' : 'btn-ghost'}" id="filter-all" style="font-size:12px;padding:4px 10px;border-radius:6px">Tất Cả (${rows.length})</button>
+              <button class="btn btn-xs ${currentFilter === 'fail' ? 'btn-primary' : 'btn-ghost'}" id="filter-fail" style="font-size:12px;padding:4px 10px;border-radius:6px">🔴 Thất Bại (${failRows.length})</button>
+            </div>
+            <button class="btn btn-ghost" id="btn-copy-ok">Copy Reg OK</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table class="results">
             <thead>
               <tr><th>Email</th><th>Password</th><th>Status</th></tr>
             </thead>
-            <tbody>
-              ${
-                rows.length
-                  ? rows
-                      .map(
-                        (r) => `<tr>
-                  <td class="mono">${esc(r.email)}</td>
-                  <td class="mono">${esc(r.password)}</td>
-                  <td>${statusTag(r.status, r.ok)}</td>
-                </tr>`
-                      )
-                      .join('')
-                  : `<tr><td colspan="3" class="empty">Chưa có kết quả</td></tr>`
-              }
+            <tbody id="results-tbody">
+              ${renderTableRows(currentFilter)}
             </tbody>
           </table>
         </div>
@@ -1069,14 +1086,35 @@ async function renderResults(root) {
     </div>
   `;
 
+  function setFilter(newFilter) {
+    currentFilter = newFilter;
+    const tbody = document.getElementById('results-tbody');
+    const mark = document.getElementById('results-count-mark');
+    if (tbody) tbody.innerHTML = renderTableRows(currentFilter);
+    if (mark) {
+      if (currentFilter === 'ok') mark.textContent = `${okRows.length} SUCCESS`;
+      else if (currentFilter === 'fail') mark.textContent = `${failRows.length} FAILED`;
+      else mark.textContent = `${rows.length} RECORDS`;
+    }
+    const btnOk = document.getElementById('filter-ok');
+    const btnAll = document.getElementById('filter-all');
+    const btnFail = document.getElementById('filter-fail');
+    if (btnOk) btnOk.className = `btn btn-xs ${currentFilter === 'ok' ? 'btn-primary' : 'btn-ghost'}`;
+    if (btnAll) btnAll.className = `btn btn-xs ${currentFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`;
+    if (btnFail) btnFail.className = `btn btn-xs ${currentFilter === 'fail' ? 'btn-primary' : 'btn-ghost'}`;
+  }
+
+  document.getElementById('filter-ok')?.addEventListener('click', () => setFilter('ok'));
+  document.getElementById('filter-all')?.addEventListener('click', () => setFilter('all'));
+  document.getElementById('filter-fail')?.addEventListener('click', () => setFilter('fail'));
+
   document.getElementById('btn-copy-ok')?.addEventListener('click', async () => {
-    const text = rows
-      .filter((r) => r.ok)
+    const text = okRows
       .map((r) => `${r.email}|${r.password}|${r.status}`)
       .join('\n');
     try {
       await navigator.clipboard.writeText(text || '');
-      toast(`Đã copy ${rows.filter((r) => r.ok).length} dòng`, 'ok');
+      toast(`Đã copy ${okRows.length} dòng`, 'ok');
     } catch {
       toast('Copy thất bại', 'err');
     }
