@@ -54,7 +54,15 @@ def main() -> None:
     config.bind = [f"{args.host}:{args.port}"]
     config.startup_timeout = 300.0
     config.shutdown_timeout = 60.0
-    asyncio.run(serve(app, config))
+    while True:
+        try:
+            asyncio.run(serve(app, config))
+            break
+        except (KeyboardInterrupt, SystemExit):
+            break
+        except Exception:
+            import time
+            time.sleep(1)
 
 
 if __name__ == '__main__':
