@@ -117,7 +117,7 @@ def _solve_turnstile(config: dict[str, Any], *, site_key: str, url: str) -> str:
         )
     ts_cfg = dict(config.get("turnstile") or {})
     try:
-        retries = max(0, min(2, int(ts_cfg.get("retries", 1))))
+        retries = max(0, min(2, int(ts_cfg.get("retries", 2))))
     except (TypeError, ValueError):
         retries = 1
     for attempt in range(retries + 1):
@@ -149,7 +149,7 @@ def _turnstile_future_timeout(config: dict[str, Any]) -> int:
     provider = ExternalTurnstileSolver.from_config(config)
     ts_cfg = dict(config.get("turnstile") or {})
     try:
-        retries = max(0, min(2, int(ts_cfg.get("retries", 1))))
+        retries = max(0, min(2, int(ts_cfg.get("retries", 2))))
     except (TypeError, ValueError):
         retries = 1
     return provider.timeout * (retries + 1) + 20
