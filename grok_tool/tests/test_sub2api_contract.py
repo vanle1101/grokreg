@@ -75,6 +75,15 @@ class Sub2APIContractTest(unittest.TestCase):
         self.assertEqual(kwargs["json"]["name"], "grok free 001")
         self.assertNotIn("sso-cookie", repr(result))
 
+    def test_resolve_exact_grok_group_accepts_composite_platform(self):
+        client = Sub2APIClient("http://127.0.0.1:8080", api_token="admin-token")
+        client.list_groups = lambda: [
+            {"id": 34, "name": "Grok", "platform": "composite"},
+            {"id": 35, "name": "Other", "platform": "openai"},
+        ]
+
+        self.assertEqual(client.resolve_group_ids_by_name("Grok"), [34])
+
 
 if __name__ == "__main__":
     unittest.main()

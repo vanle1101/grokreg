@@ -251,6 +251,10 @@ function esc(s) {
 
 function lineClass(line) {
   const l = line.toLowerCase();
+  // A newly imported Sub2API account commonly returns 403 until its first
+  // quota snapshot is ready. The retry worker follows with 200; keep this
+  // transient probe blue instead of presenting it as a failed registration.
+  if (/usage probe/.test(l) && /grok_quota_probe_upstream_error|code=403/.test(l)) return 'info';
   if (/error|fail|fatal|❌/.test(l)) return 'err';
   if (/success|✅|ok |done/.test(l)) return 'ok';
   if (/warn|⚠/.test(l)) return 'warn';

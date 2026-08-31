@@ -331,14 +331,15 @@ class Sub2APIClient:
             gid = _as_int(g.get("id") or g.get("group_id"), 0)
             if gid <= 0 or not name:
                 continue
-            # Prefer Grok platform groups
-            plat = str(g.get("platform") or "").strip().lower()
-            if plat and plat not in ("", "grok"):
-                continue
             nl = name.lower()
+            # An exact administrator-selected name is authoritative. Current
+            # Sub2API installations expose the Grok routing group as a
+            # `composite` platform, so filtering by platform first drops it.
             if nl == want:
                 exact.append(gid)
-            elif want in nl or nl in want:
+                continue
+            plat = str(g.get("platform") or "").strip().lower()
+            if plat in ("", "grok", "composite") and (want in nl or nl in want):
                 partial.append(gid)
         return exact or partial
 
