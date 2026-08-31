@@ -277,7 +277,7 @@ def start(
     browser_type = (
         browser_type
         or str(os.environ.get('GROK_REGISTER_SOLVER_BROWSER', '') or '').strip()
-        or 'camoufox'
+        or 'chrome'
     )
     try:
         thread = int(
