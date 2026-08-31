@@ -449,9 +449,13 @@ async def main(argv: list[str] | None = None) -> int:  # noqa: C901
                 )
                 break
 
-            i += 1
-            if not until_stop and i > batch:
+            # Check the finite batch boundary before incrementing.  The old
+            # order advanced ``i`` once more on the exit pass, so a one-account
+            # run was reported as two failed attempts even though only one
+            # registration was executed.
+            if not until_stop and i >= batch:
                 break
+            i += 1
             # STOP file / ESC between accounts
             if is_stop_requested() or stop_file.exists():
                 slog.api_info(
