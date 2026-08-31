@@ -169,7 +169,14 @@ class TurnstileAPIServer:
         try:
             await init_db()
             try:
-                await self._initialize_browser()
+                init_coro = self._initialize_browser()
+                # A blocked Camoufox executable can hang during startup
+                # instead of raising immediately. Bound it so fallback is
+                # deterministic and the health endpoint never stays offline.
+                if self.browser_type == "camoufox":
+                    await asyncio.wait_for(init_coro, timeout=20)
+                else:
+                    await init_coro
             except Exception as browser_error:
                 # Camoufox can be blocked by Windows Security after an
                 # automatic browser update (exit code 255 / blocked DLL).
