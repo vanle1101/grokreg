@@ -533,6 +533,11 @@ def append_one_to_sheet(email: str, tab: str = "grok") -> str:
     if not gs.get("enabled", True):
         return "google_sheets disabled in config"
     row = lookup_account_row(email)
+    status = str(row.get("status") or "").strip().lower()
+    if not status.startswith(("added_sub2api", "success")):
+        raise ValueError(
+            f"refuse Google Sheet append for non-success account: {email}"
+        )
     payload = {
         "action": "append",
         "tab": tab or "grok",

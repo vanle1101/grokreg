@@ -222,12 +222,34 @@ def tool_stats(tool_id: str):
 
 
 @app.get("/api/tools/{tool_id}/results")
-def tool_results(tool_id: str, limit: int = Query(100, ge=1, le=2000)):
+def tool_results(
+    tool_id: str,
+    limit: int = Query(100, ge=1, le=10000),
+    success_only: bool = False,
+):
     try:
         p = get_plugin(tool_id)
     except KeyError:
         raise HTTPException(404, "tool not found")
-    return {"results": p.parse_results(ROOT, limit=limit)}
+    # Success-only vaults must not lose valid rows merely because recent
+    # failed attempts occupied the raw tail of accounts.txt.
+    raw_limit = 20000 if success_only else limit
+    rows = p.parse_results(ROOT, limit=raw_limit)
+    if success_only:
+        unique_success: list[dict[str, Any]] = []
+        seen_emails: set[str] = set()
+        for row in rows:  # newest first
+            if not bool(row.get("ok")):
+                continue
+            email = str(row.get("email") or "").strip().lower()
+            if not email or email in seen_emails:
+                continue
+            seen_emails.add(email)
+            unique_success.append(row)
+            if len(unique_success) >= limit:
+                break
+        rows = unique_success
+    return {"results": rows}
 
 
 @app.get("/api/tools/{tool_id}/hotmails")

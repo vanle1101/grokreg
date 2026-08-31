@@ -1,4 +1,4 @@
-import * as api from './api.js?v=3.4';
+import * as api from './api.js?v=3.5';
 import { toast } from './toast.js?v=3.3';
 
 const getTools = api.getTools;
@@ -495,16 +495,11 @@ async function renderRegister(root) {
 
   root.innerHTML = `
     <div class="page">
-      <div class="grid-4">
-        <div class="stat-card info" title="Số email khác nhau (lấy status lần cuối)">
-          <div class="stat-label">Email (unique)</div>
-          <div class="stat-value">${stats.unique_emails ?? stats.total ?? '—'}</div>
-          <div class="card-sub" style="margin-top:4px">${stats.attempts ?? '—'} lượt thử</div>
-        </div>
+      <div class="grid-2">
         <div class="stat-card ok" title="${isSheetOnly(tool.id) ? 'Reg thành công — chỉ lên Google Sheet, không Sub2' : 'Reg xong: Sub2API + reg-only + reg OK nhưng sub2 fail'}">
-          <div class="stat-label">Reg OK</div>
+          <div class="stat-label">Tài khoản thành công</div>
           <div class="stat-value">${stats.success ?? '—'}</div>
-          <div class="card-sub" style="margin-top:4px">${isSheetOnly(tool.id) ? `lên sheet ${esc(tool.id)}, không Sub2` : `chỉ reg: ${stats.reg_only ?? 0} · sub2 fail: ${stats.sub2_fail ?? 0}`}</div>
+          <div class="card-sub" style="margin-top:4px">Chỉ tính tài khoản đăng ký thành công</div>
         </div>
         ${isSheetOnly(tool.id) ? `
         <div class="stat-card" title="${esc(tool.name)} không import Sub2API">
@@ -517,13 +512,7 @@ async function renderRegister(root) {
           <div class="stat-value" id="register-sub2-total">${stats.sub2api_live_total ?? stats.sub2api ?? '—'}</div>
           <div class="card-sub" id="register-sub2-detail" style="margin-top:4px">${stats.sub2api ?? 0} email unique · ${stats.sub2api_live_active ?? '—'} active</div>
         </div>`}
-        <div class="stat-card bad" title="error* lần status cuối mỗi email">
-          <div class="stat-label">Fail</div>
-          <div class="stat-value">${stats.fail ?? '—'}</div>
-          <div class="card-sub" style="margin-top:4px">pending: ${stats.pending ?? 0}</div>
-        </div>
       </div>
-      ${stats.blurb ? `<div class="card-sub" style="margin-top:-6px">${esc(stats.blurb)}</div>` : ''}
 
       <div class="workspace">
         <div class="card control-card">
@@ -1021,29 +1010,35 @@ function bindClearLogButton() {
 
 async function renderResults(root) {
   const toolId = state.selectedTool || 'grok';
-  let rows = [];
-  let stats = {};
+  let rows;
+  let stats;
   try {
-    const r = await getToolResults(toolId, 150);
-    rows = r.results || [];
-    stats = await getToolStats(toolId);
+    const [resultData, statsData] = await Promise.all([
+      getToolResults(toolId, 10000, true),
+      getToolStats(toolId),
+    ]);
+    rows = resultData.results || [];
+    stats = statsData || {};
   } catch (e) {
-    /* ignore fetch error */
+    root.innerHTML = `
+      <div class="empty" role="alert">
+        Không tải được Kho tài khoản: ${esc(e.message || e)}
+        <div class="btn-row"><button class="btn btn-primary" id="btn-retry-results">Tải lại</button></div>
+      </div>`;
+    root.querySelector('#btn-retry-results')?.addEventListener('click', () => renderResults(root));
+    return;
   }
 
   const okRows = rows.filter((r) => r.ok);
-  const failRows = rows.filter((r) => !r.ok);
-  let currentFilter = 'ok'; // Default to showing only success accounts
+  // Keep the table responsive while Copy still includes the complete success
+  // ledger returned by the API.
+  const visibleRows = okRows.slice(0, 500);
 
-  function renderTableRows(filter) {
-    let list = rows;
-    if (filter === 'ok') list = okRows;
-    else if (filter === 'fail') list = failRows;
-
-    if (!list.length) {
-      return `<tr><td colspan="3" class="empty">Không có tài khoản nào (${filter === 'ok' ? 'chưa có acc thành công' : 'không có dữ liệu'})</td></tr>`;
+  function renderTableRows() {
+    if (!visibleRows.length) {
+      return '<tr><td colspan="3" class="empty">Chưa có tài khoản đăng ký thành công</td></tr>';
     }
-    return list
+    return visibleRows
       .map(
         (r) => `<tr>
           <td class="mono">${esc(r.email)}</td>
@@ -1058,31 +1053,21 @@ async function renderResults(root) {
     <div class="page">
       <div class="page-banner">
         <div><div class="hero-kicker"><i></i> Data vault</div><h2>Kho dữ liệu tài khoản</h2><p>Dữ liệu tài khoản và trạng thái xử lý mới nhất của ${esc(toolId)}.</p></div>
-        <span class="page-banner-mark" id="results-count-mark">${okRows.length} SUCCESS</span>
+        <span class="page-banner-mark">${stats.success ?? okRows.length} SUCCESS</span>
       </div>
-      <div class="grid-4">
-        <div class="stat-card info"><div class="stat-label">Email unique</div><div class="stat-value">${stats.unique_emails ?? stats.total ?? 0}</div>
-          <div class="card-sub" style="margin-top:4px">${stats.attempts ?? 0} lượt thử</div></div>
-        <div class="stat-card ok"><div class="stat-label">Reg OK</div><div class="stat-value">${stats.success ?? 0}</div>
-          <div class="card-sub" style="margin-top:4px">${isSheetOnly(toolId) ? 'không Sub2 — chỉ sheet' : `reg-only ${stats.reg_only ?? 0} · sub2 fail ${stats.sub2_fail ?? 0}`}</div></div>
-        <div class="stat-card"><div class="stat-label">${isSheetOnly(toolId) ? `Sheet ${esc(toolId)}` : 'Sub2API OK'}</div><div class="stat-value">${isSheetOnly(toolId) ? (stats.success ?? 0) : (stats.sub2api_live_total ?? stats.sub2api ?? 0)}</div>${!isSheetOnly(toolId) ? `<div class="card-sub" style="margin-top:4px">${stats.sub2api ?? 0} email unique · ${stats.sub2api_live_active ?? '—'} active</div>` : ''}</div>
-        <div class="stat-card bad"><div class="stat-label">Fail</div><div class="stat-value">${stats.fail ?? 0}</div>
-          <div class="card-sub" style="margin-top:4px">pending ${stats.pending ?? 0}</div></div>
+      <div class="grid-2">
+        <div class="stat-card ok"><div class="stat-label">Tài khoản thành công</div><div class="stat-value">${stats.success ?? okRows.length}</div>
+          <div class="card-sub" style="margin-top:4px">Chỉ hiển thị acc đăng ký thành công</div></div>
+        <div class="stat-card"><div class="stat-label">${isSheetOnly(toolId) ? `Google Sheet · ${esc(toolId)}` : 'Sub2API thành công'}</div><div class="stat-value">${isSheetOnly(toolId) ? (stats.success ?? okRows.length) : (stats.sub2api_live_total ?? stats.sub2api ?? 0)}</div>${!isSheetOnly(toolId) ? `<div class="card-sub" style="margin-top:4px">${stats.sub2api ?? 0} email thành công đã đối chiếu</div>` : '<div class="card-sub" style="margin-top:4px">Chỉ đồng bộ acc thành công</div>'}</div>
       </div>
-      ${stats.blurb ? `<div class="card-sub">${esc(stats.blurb)}</div>` : ''}
       <div class="card">
         <div class="card-head" style="flex-wrap:wrap;gap:12px">
           <div>
             <div class="card-title">Accounts · ${esc(toolId)}</div>
-            <div class="card-sub">Hiển thị danh sách tài khoản đã xử lý</div>
+            <div class="card-sub">Hiện ${visibleRows.length} acc thành công mới nhất · tổng ${stats.success ?? okRows.length}</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
-            <div class="filter-tabs" style="display:inline-flex;background:rgba(255,255,255,0.06);padding:3px;border-radius:8px;gap:2px">
-              <button class="btn btn-xs ${currentFilter === 'ok' ? 'btn-primary' : 'btn-ghost'}" id="filter-ok" style="font-size:12px;padding:4px 10px;border-radius:6px">🟢 Chỉ Thành Công (${okRows.length})</button>
-              <button class="btn btn-xs ${currentFilter === 'all' ? 'btn-primary' : 'btn-ghost'}" id="filter-all" style="font-size:12px;padding:4px 10px;border-radius:6px">Tất Cả (${rows.length})</button>
-              <button class="btn btn-xs ${currentFilter === 'fail' ? 'btn-primary' : 'btn-ghost'}" id="filter-fail" style="font-size:12px;padding:4px 10px;border-radius:6px">🔴 Thất Bại (${failRows.length})</button>
-            </div>
-            <button class="btn btn-ghost" id="btn-copy-ok">Copy Reg OK</button>
+            <button class="btn btn-ghost" id="btn-copy-ok">Copy toàn bộ acc thành công</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -1091,35 +1076,13 @@ async function renderResults(root) {
               <tr><th>Email</th><th>Password</th><th>Status</th></tr>
             </thead>
             <tbody id="results-tbody">
-              ${renderTableRows(currentFilter)}
+              ${renderTableRows()}
             </tbody>
           </table>
         </div>
       </div>
     </div>
   `;
-
-  function setFilter(newFilter) {
-    currentFilter = newFilter;
-    const tbody = document.getElementById('results-tbody');
-    const mark = document.getElementById('results-count-mark');
-    if (tbody) tbody.innerHTML = renderTableRows(currentFilter);
-    if (mark) {
-      if (currentFilter === 'ok') mark.textContent = `${okRows.length} SUCCESS`;
-      else if (currentFilter === 'fail') mark.textContent = `${failRows.length} FAILED`;
-      else mark.textContent = `${rows.length} RECORDS`;
-    }
-    const btnOk = document.getElementById('filter-ok');
-    const btnAll = document.getElementById('filter-all');
-    const btnFail = document.getElementById('filter-fail');
-    if (btnOk) btnOk.className = `btn btn-xs ${currentFilter === 'ok' ? 'btn-primary' : 'btn-ghost'}`;
-    if (btnAll) btnAll.className = `btn btn-xs ${currentFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`;
-    if (btnFail) btnFail.className = `btn btn-xs ${currentFilter === 'fail' ? 'btn-primary' : 'btn-ghost'}`;
-  }
-
-  document.getElementById('filter-ok')?.addEventListener('click', () => setFilter('ok'));
-  document.getElementById('filter-all')?.addEventListener('click', () => setFilter('all'));
-  document.getElementById('filter-fail')?.addEventListener('click', () => setFilter('fail'));
 
   document.getElementById('btn-copy-ok')?.addEventListener('click', async () => {
     const text = okRows
@@ -1812,7 +1775,12 @@ async function route() {
   view.hidden = false;
 
   if (routeLoads.has(known)) return routeLoads.get(known);
-  if (view.dataset.loaded === '1') return;
+  if (view.dataset.loaded === '1') {
+    // Results are persisted on disk and can change while this route is
+    // hidden. Always refresh on entry; never preserve a transient zero/error.
+    if (known === '#/results') await renderResults(view);
+    return;
+  }
 
   const load = (async () => {
     try {

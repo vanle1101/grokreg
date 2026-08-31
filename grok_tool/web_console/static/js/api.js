@@ -26,8 +26,8 @@ export async function api(path, options = {}) {
 
 export const getTools = () => api('/api/tools');
 export const getToolStats = (id) => api(`/api/tools/${id}/stats`);
-export const getToolResults = (id, limit = 100) =>
-  api(`/api/tools/${id}/results?limit=${limit}`);
+export const getToolResults = (id, limit = 100, successOnly = false) =>
+  api(`/api/tools/${id}/results?limit=${limit}&success_only=${successOnly ? 'true' : 'false'}`);
 export const getCurrentJob = (toolId = '', logFrom = 0) => {
   const q = new URLSearchParams();
   if (toolId) q.set('tool_id', toolId);
