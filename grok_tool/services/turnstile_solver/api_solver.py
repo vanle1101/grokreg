@@ -168,7 +168,21 @@ class TurnstileAPIServer:
         logger.info("Starting browser initialization")
         try:
             await init_db()
-            await self._initialize_browser()
+            try:
+                await self._initialize_browser()
+            except Exception as browser_error:
+                # Camoufox can be blocked by Windows Security after an
+                # automatic browser update (exit code 255 / blocked DLL).
+                # Fall back to the installed Chromium channel so the API does
+                # not advertise a healthy solver with an empty browser pool.
+                if self.browser_type != "camoufox":
+                    raise
+                logger.warning(
+                    "Camoufox failed to launch (%s); falling back to Chrome headless",
+                    browser_error,
+                )
+                self.browser_type = "chrome"
+                await self._initialize_browser()
 
             # Запускаем периодическую очистку старых результатов
             asyncio.create_task(self._periodic_cleanup())
@@ -960,6 +974,20 @@ class TurnstileAPIServer:
 
             await self._return_browser_to_pool(index, browser, browser_config)
 
+    async def _run_turnstile_task(self, *, timeout_sec: int, **kwargs):
+        """Keep service work inside the deadline advertised by the client."""
+        task_id = str(kwargs.get('task_id') or '')
+        budget = max(10, int(timeout_sec) - 3)
+        try:
+            await asyncio.wait_for(self._solve_turnstile(**kwargs), timeout=budget)
+        except asyncio.TimeoutError:
+            await save_result(task_id, "turnstile", {
+                "value": "CAPTCHA_FAIL",
+                "error": f"solver task exceeded {budget}s service budget",
+                "elapsed_time": budget,
+            })
+            logger.error(f"Task {task_id}: Turnstile service timeout after {budget}s")
+
 
 
 
@@ -973,6 +1001,10 @@ class TurnstileAPIServer:
         cdata = request.args.get('cdata')
         # Per-task proxy so solver shares registration egress (YesCaptcha-style).
         proxy = request.args.get('proxy')
+        try:
+            timeout_sec = max(20, min(300, int(request.args.get('timeout') or 90)))
+        except (TypeError, ValueError):
+            timeout_sec = 90
 
         if not url or not sitekey:
             return jsonify({
@@ -993,7 +1025,8 @@ class TurnstileAPIServer:
         })
 
         try:
-            asyncio.create_task(self._solve_turnstile(
+            asyncio.create_task(self._run_turnstile_task(
+                timeout_sec=timeout_sec,
                 task_id=task_id,
                 url=url,
                 sitekey=sitekey,
@@ -1041,8 +1074,10 @@ class TurnstileAPIServer:
         if isinstance(result, dict) and result.get("value") == "CAPTCHA_FAIL":
             return jsonify({
                 "errorId": 1,
+                "status": "failed",
                 "errorCode": "ERROR_CAPTCHA_UNSOLVABLE",
-                "errorDescription": "Workers could not solve the Captcha"
+                "errorDescription": str(result.get("error") or "Workers could not solve the Captcha"),
+                "elapsedTime": result.get("elapsed_time"),
             }), 200
 
         if isinstance(result, dict) and result.get("value") and result.get("value") != "CAPTCHA_FAIL":
@@ -1056,6 +1091,7 @@ class TurnstileAPIServer:
         else:
             return jsonify({
                 "errorId": 1,
+                "status": "failed",
                 "errorCode": "ERROR_CAPTCHA_UNSOLVABLE",
                 "errorDescription": "Workers could not solve the Captcha"
             }), 200
