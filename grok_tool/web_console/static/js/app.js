@@ -1846,13 +1846,15 @@ async function pollJob() {
     updateRunPill(state.job);
     updateJobProgress(state.job);
 
-    const box = visibleRouteElement('#log-box');
-    const statusLine = visibleRouteElement('#job-status-line');
     if (state.job) {
-      if (statusLine) {
-        statusLine.innerHTML = formatStatusLine(state.job);
-      }
-      if (box) paintLogs(box, state.job.logs || []);
+      // Keep every mounted route synchronized. The register and logs pages
+      // both have a log panel, and one may be hidden while the other is open.
+      document.querySelectorAll('#job-status-line').forEach((line) => {
+        line.innerHTML = formatStatusLine(state.job);
+      });
+      document.querySelectorAll('#log-box').forEach((box) => {
+        paintLogs(box, state.job.logs || []);
+      });
 
       // refresh Start/Stop disabled state on register page without full re-render
       const running = ['running', 'pending', 'stopping'].includes(state.job.status);
