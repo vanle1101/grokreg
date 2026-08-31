@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_SOLVER_PORT = 5072
 DEFAULT_SOLVER_URL = f'http://127.0.0.1:{DEFAULT_SOLVER_PORT}'
 _MAX_CONSECUTIVE_FAILURES = 3
-_READY_TIMEOUT_SEC = 45
+_READY_TIMEOUT_SEC = 10
 
 _proc: subprocess.Popen | None = None
 _lock = threading.Lock()
@@ -265,7 +265,7 @@ def start(
     browser_type = (
         browser_type
         or str(os.environ.get('GROK_REGISTER_SOLVER_BROWSER', '') or '').strip()
-        or 'camoufox'
+        or 'chrome'
     )
     try:
         thread = int(

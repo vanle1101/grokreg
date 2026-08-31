@@ -97,8 +97,8 @@ class GrokToolPlugin(BaseToolPlugin):
         return n in ("1", "hotmail", "outlook", "ms", "microsoft")
 
     def preflight(self, params: dict[str, Any], root: Path) -> None:
-        backend = str(params.get("backend") or "github").strip().lower()
-        if backend in ("protocol", "auto", "http", "pure_http", "github", "castle"):
+        backend = str(params.get("backend") or "browser").strip().lower()
+        if backend in ("protocol", "github", "castle", "http"):
             try:
                 if str(root) not in sys.path:
                     sys.path.insert(0, str(root))
