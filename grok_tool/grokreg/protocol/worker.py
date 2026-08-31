@@ -115,12 +115,38 @@ def _solve_turnstile(config: dict[str, Any], *, site_key: str, url: str) -> str:
             "Turnstile solver offline — bật CHAY_SOLVER (:5072) hoặc YesCaptcha "
             "(protocol bắt buộc external solver, giống đối thủ)"
         )
-    return provider.solve(url=url, site_key=site_key)
+    ts_cfg = dict(config.get("turnstile") or {})
+    try:
+        retries = max(0, min(2, int(ts_cfg.get("retries", 1))))
+    except (TypeError, ValueError):
+        retries = 1
+    for attempt in range(retries + 1):
+        try:
+            return provider.solve(url=url, site_key=site_key)
+        except TurnstileSolveError as exc:
+            # Camoufox can occasionally return UNSOLVABLE under a large
+            # parallel batch. Recreate the task once while the OTP is still
+            # valid instead of immediately burning the email/account attempt.
+            if attempt >= retries or "ERROR_CAPTCHA_UNSOLVABLE" not in str(exc):
+                raise
+            log.warning(
+                "[turnstile] CAPTCHA unsolvable — retry %s/%s with a fresh task",
+                attempt + 1,
+                retries,
+            )
+            time.sleep(1.0)
+    raise TurnstileSolveError("Turnstile retry loop ended unexpectedly")
 
 
 def _turnstile_future_timeout(config: dict[str, Any]) -> int:
     """Keep the outer Future budget longer than the provider's own deadline."""
-    return ExternalTurnstileSolver.from_config(config).timeout + 15
+    provider = ExternalTurnstileSolver.from_config(config)
+    ts_cfg = dict(config.get("turnstile") or {})
+    try:
+        retries = max(0, min(2, int(ts_cfg.get("retries", 1))))
+    except (TypeError, ValueError):
+        retries = 1
+    return provider.timeout * (retries + 1) + 20
 
 
 def register_one_github(config: dict[str, Any]) -> ProtocolResult:
