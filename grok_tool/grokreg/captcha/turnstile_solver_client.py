@@ -102,7 +102,10 @@ class ExternalTurnstileSolver:
                 ts.get("yescaptcha_key") or cfg.get("yescaptcha_key") or ""
             ),
             proxy=str(ts.get("proxy") or cfg.get("proxy") or ""),
-            timeout=int(ts.get("timeout_sec") or 60),
+            # Keep enough service budget for a busy Camoufox pool.  An
+            # explicit config value still wins, but new installs should not
+            # fail at the old 57-second hard deadline under concurrency.
+            timeout=int(ts.get("timeout_sec") or 120),
         )
 
     def available(self) -> bool:

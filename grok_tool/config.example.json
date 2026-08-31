@@ -139,7 +139,7 @@
     "mode": "auto",
     "solver_url": "http://127.0.0.1:5072",
       "yescaptcha_key": "",
-      "timeout_sec": 60,
+      "timeout_sec": 120,
       "retries": 1,
       "threads": 1,
     "sitekey": ""

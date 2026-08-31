@@ -374,7 +374,7 @@ async def main(argv: list[str] | None = None) -> int:  # noqa: C901
     requested_threads = max(
         1,
         min(
-            10,
+            50,
             int(
                 args.threads
                 if args.threads is not None
