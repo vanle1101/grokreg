@@ -71,6 +71,20 @@ class JobProgressTest(unittest.TestCase):
         self.assertEqual(command[command.index("--count") + 1], "100")
         self.assertEqual(command[command.index("--threads") + 1], "5")
 
+    def test_grok_web_exposes_and_passes_fifty_real_threads(self):
+        plugin = GrokToolPlugin()
+        field = next(field for field in plugin.meta.fields if field.key == "threads")
+        self.assertEqual(
+            [option.value for option in field.options],
+            ["1", "3", "5", "10", "15", "20", "50"],
+        )
+        with patch.object(plugin, "_py", return_value=Path(sys.executable)):
+            command = plugin.build_command(
+                {"mail": "0", "count": 100, "backend": "github", "threads": 50},
+                Path.cwd(),
+            )
+        self.assertEqual(command[command.index("--threads") + 1], "50")
+
     def test_parallel_github_really_overlaps_workers(self):
         guard = threading.Lock()
         active = 0
@@ -105,6 +119,42 @@ class JobProgressTest(unittest.TestCase):
 
         self.assertEqual((ok, completed), (6, 6))
         self.assertGreaterEqual(max_active, 3)
+
+    def test_parallel_github_can_reach_fifty_workers(self):
+        guard = threading.Lock()
+        gate = threading.Barrier(50, timeout=5)
+        active = 0
+        max_active = 0
+
+        def fake_register(_config):
+            nonlocal active, max_active
+            with guard:
+                active += 1
+                max_active = max(max_active, active)
+            gate.wait()
+            with guard:
+                active -= 1
+            return SimpleNamespace(
+                ok=True,
+                status="success",
+                email="test@example.com",
+                duration_sec=0.01,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                patch("grokreg.protocol.worker.register_one_github", side_effect=fake_register),
+                patch.object(cli_app, "ROOT", Path(tmp)),
+                patch.object(cli_app, "is_stop_requested", return_value=False),
+                patch.object(cli_app, "interruptible_sleep", new=AsyncMock(return_value=None)),
+                patch.object(style_log, "_out"),
+            ):
+                ok, completed = asyncio.run(
+                    cli_app.run_parallel_github({}, batch=50, threads=50)
+                )
+
+        self.assertEqual((ok, completed), (50, 50))
+        self.assertEqual(max_active, 50)
 
 
 if __name__ == "__main__":

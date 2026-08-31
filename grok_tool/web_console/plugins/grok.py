@@ -54,6 +54,9 @@ class GrokToolPlugin(BaseToolPlugin):
                     FieldOption("3", "3 luồng", "cân bằng"),
                     FieldOption("5", "5 luồng", "khuyến nghị"),
                     FieldOption("10", "10 luồng", "nhanh / tốn RAM"),
+                    FieldOption("15", "15 luồng", "rất nhanh / cần máy mạnh"),
+                    FieldOption("20", "20 luồng", "tải cao / nhiều RAM"),
+                    FieldOption("50", "50 luồng", "tải cực cao / máy chủ mạnh"),
                 ],
                 hint="Luồng thật cho HTTP không Chrome · Số lượng phải ≥ số luồng",
             ),
@@ -107,7 +110,7 @@ class GrokToolPlugin(BaseToolPlugin):
 
                 cfg = load_config()
                 try:
-                    threads = max(1, min(10, int(params.get("threads") or 1)))
+                    threads = max(1, min(50, int(params.get("threads") or 1)))
                 except (TypeError, ValueError):
                     threads = 1
                 st = get_status(
@@ -160,7 +163,7 @@ class GrokToolPlugin(BaseToolPlugin):
         ) and not self._is_hotmail_mail(mail):
             mail = "2"
         try:
-            threads = max(1, min(10, int(params.get("threads") or 1)))
+            threads = max(1, min(50, int(params.get("threads") or 1)))
         except (TypeError, ValueError):
             threads = 1
         return [
@@ -182,7 +185,7 @@ class GrokToolPlugin(BaseToolPlugin):
     def env_overrides(self, params: dict[str, Any]) -> dict[str, str]:
         env: dict[str, str] = {}
         try:
-            env["GROK_THREADS"] = str(max(1, min(10, int(params.get("threads") or 1))))
+            env["GROK_THREADS"] = str(max(1, min(50, int(params.get("threads") or 1))))
         except (TypeError, ValueError):
             env["GROK_THREADS"] = "1"
         if params.get("sub2api") is False or str(params.get("sub2api")).lower() in (

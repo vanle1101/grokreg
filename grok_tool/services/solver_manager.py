@@ -366,7 +366,12 @@ def start(
             _owned_by_us = False
             return get_status(_managed_url)
 
-        for _ in range(_READY_TIMEOUT_SEC):
+        # Camoufox starts one browser per solver worker. Large pools (20/50)
+        # need a proportional readiness window; the old fixed 10 seconds
+        # incorrectly killed/failed a healthy process while it was still
+        # constructing the requested pool.
+        ready_timeout = max(_READY_TIMEOUT_SEC, min(180, int(thread) * 4))
+        for _ in range(ready_timeout):
             time.sleep(1)
             if _proc.poll() is not None:
                 _consecutive_failures += 1
@@ -387,7 +392,7 @@ def start(
                 return get_status(_managed_url)
 
         _consecutive_failures += 1
-        _last_failure_reason = f'启动超时（{_READY_TIMEOUT_SEC}s）'
+        _last_failure_reason = f'启动超时（{ready_timeout}s）'
         logger.error('[Solver] %s', _last_failure_reason)
         return get_status(_managed_url)
 

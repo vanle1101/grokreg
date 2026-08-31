@@ -216,7 +216,7 @@ async def run_parallel_github(
     """Run real concurrent HTTP registrations; each worker owns one OS thread."""
     from grokreg.protocol.worker import register_one_github
 
-    worker_count = max(1, min(10, int(threads)))
+    worker_count = max(1, min(50, int(threads)))
     if not until_stop:
         worker_count = min(worker_count, max(1, int(batch)))
 
@@ -226,6 +226,11 @@ async def run_parallel_github(
     ok_n = 0
     total_disp = 0 if until_stop else max(1, int(batch))
     stop_file = ROOT / "data" / "STOP"
+    loop = asyncio.get_running_loop()
+    executor = ThreadPoolExecutor(
+        max_workers=worker_count,
+        thread_name_prefix="grok-http",
+    )
 
     async def claim_attempt() -> int | None:
         nonlocal next_attempt
@@ -253,7 +258,12 @@ async def run_parallel_github(
             if attempt is None:
                 return
             try:
-                result = await asyncio.to_thread(run_one, worker_id, attempt)
+                result = await loop.run_in_executor(
+                    executor,
+                    run_one,
+                    worker_id,
+                    attempt,
+                )
                 status = result.status
                 if result.ok:
                     slog.api_ok(
@@ -285,7 +295,10 @@ async def run_parallel_github(
         "🧵",
         f"MULTI-THREAD THẬT: {worker_count} worker HTTP chạy đồng thời",
     )
-    await asyncio.gather(*(worker(i + 1) for i in range(worker_count)))
+    try:
+        await asyncio.gather(*(worker(i + 1) for i in range(worker_count)))
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
     return ok_n, completed
 
 
