@@ -153,7 +153,9 @@ function normalizedProgress(job) {
   completed = total > 0 ? Math.min(total, completed) : completed;
   const ok = Math.min(completed, Math.max(0, Number(source.ok) || 0));
   const failed = Math.min(completed, Math.max(0, Number(source.failed) || 0));
-  const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : null;
+  // This panel measures delivered accounts, not raw attempts. Failed CAPTCHA,
+  // email and upstream attempts must never inflate the displayed progress.
+  const percent = total > 0 ? Math.min(100, Math.round((ok / total) * 100)) : null;
   return { completed, total, ok, failed, percent, continuous: total === 0 };
 }
 
@@ -181,13 +183,13 @@ function progressContent(job) {
   if (p.continuous) stateText = active ? '<span class="progress-live-pill">ĐANG CHẠY</span>' : '<span class="progress-rest-pill">ĐÃ DỪNG</span>';
   const width = p.continuous ? Math.min(100, p.completed * 5) : p.percent;
   return `
-    <div class="progress-meta">
+    <div class="progress-meta" role="status" aria-live="polite" aria-atomic="true">
       <strong>${countText}</strong>
       <span>${stateText}</span>
     </div>
     <div class="progress-track${active ? ' is-active' : ''}" role="progressbar"
       aria-label="Tiến trình đăng ký" aria-valuemin="0"
-      ${p.continuous ? '' : `aria-valuemax="${p.total}" aria-valuenow="${p.completed}"`}>
+      ${p.continuous ? '' : `aria-valuemax="${p.total}" aria-valuenow="${p.ok}"`}>
       <i style="width:${width}%"></i>
     </div>
     <div class="progress-detail">
