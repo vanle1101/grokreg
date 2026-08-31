@@ -39,7 +39,7 @@ echo   Solver HEADLESS — khong mo cua so Chrome (khong cuop man hinh).
 echo   Giu cua so CMD nay MO khi reg.
 echo.
 cd services\turnstile_solver
-..\..\venv\Scripts\python.exe start.py --browser_type camoufox --thread 1 --port 5072 --host 127.0.0.1
+..\..\venv\Scripts\python.exe start.py --browser_type chrome --thread 2 --port 5072 --host 127.0.0.1
 set ERR=%ERRORLEVEL%
 echo.
 if not "%ERR%"=="0" echo [LOI] Solver exit=%ERR%

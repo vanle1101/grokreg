@@ -184,6 +184,7 @@ class TurnstileAPIServer:
 
         if self.browser_type in ['chromium', 'chrome', 'msedge']:
             playwright = await async_playwright().start()
+            self.playwright = playwright
         elif self.browser_type == "camoufox":
             import os as _os
 
@@ -191,10 +192,6 @@ class TurnstileAPIServer:
                 _os.environ["MOZ_HEADLESS"] = "1"
                 _os.environ["MOZ_HEADLESS_WIDTH"] = "1280"
                 _os.environ["MOZ_HEADLESS_HEIGHT"] = "720"
-            # The solver does not need an ad blocker. Excluding Camoufox's
-            # default uBlock addon also avoids a poisoned partial-download
-            # cache (an empty UBO directory without manifest.json), which
-            # otherwise prevents the browser from starting at all.
             camoufox = AsyncCamoufox(
                 headless=True if self.headless else False,
                 exclude_addons=[DefaultAddons.UBO],
@@ -219,12 +216,10 @@ class TurnstileAPIServer:
                     useragent = self.useragent
                     sec_ch_ua = getattr(self, 'sec_ch_ua', '')
             else:
-                # Для camoufox и других браузеров используем значения по умолчанию
                 browser = self.browser_type
                 version = 'custom'
                 useragent = self.useragent
                 sec_ch_ua = getattr(self, 'sec_ch_ua', '')
-
 
             browser_configs.append({
                 'browser_name': browser,
@@ -249,11 +244,18 @@ class TurnstileAPIServer:
 
             browser = None
             if self.browser_type in ['chromium', 'chrome', 'msedge'] and playwright:
-                browser = await playwright.chromium.launch(
-                    channel=self.browser_type,
-                    headless=self.headless,
-                    args=browser_args
-                )
+                channel = 'chrome' if self.browser_type in ('chromium', 'chrome') else self.browser_type
+                try:
+                    browser = await playwright.chromium.launch(
+                        channel=channel,
+                        headless=self.headless,
+                        args=browser_args
+                    )
+                except Exception:
+                    browser = await playwright.chromium.launch(
+                        headless=self.headless,
+                        args=browser_args
+                    )
             elif self.browser_type == "camoufox" and camoufox:
                 browser = await camoufox.start()
 
