@@ -68,12 +68,12 @@ class GrokToolPlugin(BaseToolPlugin):
                 key="backend",
                 label="Cách reg",
                 type="select",
-                default="github",
+                default="browser",
                 options=[
+                    FieldOption("browser", "Chrome ẩn (Khuyến nghị)", "Bypass Cloudflare 100% tự động"),
+                    FieldOption("auto", "Tự động", "HTTP rồi Chrome nếu fail"),
                     FieldOption("github", "HTTP không Chrome", "solver :5072"),
                     FieldOption("protocol", "HTTP + Castle", "Chrome lấy token"),
-                    FieldOption("auto", "Tự động", "HTTP rồi Chrome nếu fail"),
-                    FieldOption("browser", "Chrome ẩn", ""),
                 ],
             ),
             ToolField(
