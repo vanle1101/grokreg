@@ -1030,15 +1030,16 @@ async function renderResults(root) {
   }
 
   const okRows = rows.filter((r) => r.ok);
-  // Keep the table responsive while Copy still includes the complete success
-  // ledger returned by the API.
-  const visibleRows = okRows.slice(0, 500);
+  const pageSize = 200;
+  const totalPages = Math.max(1, Math.ceil(okRows.length / pageSize));
+  let currentPage = 1;
 
   function renderTableRows() {
-    if (!visibleRows.length) {
+    if (!okRows.length) {
       return '<tr><td colspan="3" class="empty">Chưa có tài khoản đăng ký thành công</td></tr>';
     }
-    return visibleRows
+    const start = (currentPage - 1) * pageSize;
+    return okRows.slice(start, start + pageSize)
       .map(
         (r) => `<tr>
           <td class="mono">${esc(r.email)}</td>
@@ -1064,7 +1065,7 @@ async function renderResults(root) {
         <div class="card-head" style="flex-wrap:wrap;gap:12px">
           <div>
             <div class="card-title">Accounts · ${esc(toolId)}</div>
-            <div class="card-sub">Hiện ${visibleRows.length} acc thành công mới nhất · tổng ${stats.success ?? okRows.length}</div>
+            <div class="card-sub" id="results-page-summary">Hiện 1–${Math.min(pageSize, okRows.length)} · tổng ${stats.success ?? okRows.length} acc thành công</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
             <button class="btn btn-ghost" id="btn-copy-ok">Copy toàn bộ acc thành công</button>
@@ -1080,11 +1081,40 @@ async function renderResults(root) {
             </tbody>
           </table>
         </div>
+        <div class="btn-row" style="justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-ghost" id="results-prev" ${totalPages <= 1 ? 'disabled' : ''}>Trang trước</button>
+          <span class="card-sub" id="results-page-label" role="status" aria-live="polite">Trang 1 / ${totalPages}</span>
+          <button class="btn btn-ghost" id="results-next" ${totalPages <= 1 ? 'disabled' : ''}>Trang sau</button>
+        </div>
       </div>
     </div>
   `;
 
-  document.getElementById('btn-copy-ok')?.addEventListener('click', async () => {
+  function paintResultsPage() {
+    const tbody = root.querySelector('#results-tbody');
+    const label = root.querySelector('#results-page-label');
+    const summary = root.querySelector('#results-page-summary');
+    const prev = root.querySelector('#results-prev');
+    const next = root.querySelector('#results-next');
+    if (tbody) tbody.innerHTML = renderTableRows();
+    if (label) label.textContent = `Trang ${currentPage} / ${totalPages}`;
+    const first = okRows.length ? (currentPage - 1) * pageSize + 1 : 0;
+    const last = Math.min(currentPage * pageSize, okRows.length);
+    if (summary) summary.textContent = `Hiện ${first}–${last} · tổng ${stats.success ?? okRows.length} acc thành công`;
+    if (prev) prev.disabled = currentPage <= 1;
+    if (next) next.disabled = currentPage >= totalPages;
+  }
+
+  root.querySelector('#results-prev')?.addEventListener('click', () => {
+    currentPage = Math.max(1, currentPage - 1);
+    paintResultsPage();
+  });
+  root.querySelector('#results-next')?.addEventListener('click', () => {
+    currentPage = Math.min(totalPages, currentPage + 1);
+    paintResultsPage();
+  });
+
+  root.querySelector('#btn-copy-ok')?.addEventListener('click', async () => {
     const text = okRows
       .map((r) => `${r.email}|${r.password}|${r.status}`)
       .join('\n');
