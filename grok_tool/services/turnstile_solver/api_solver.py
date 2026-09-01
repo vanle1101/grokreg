@@ -70,6 +70,13 @@ class TurnstileAPIServer:
         self.thread_count = thread
         self.proxy_support = proxy_support
         self.browser_pool = asyncio.Queue()
+        self.browser_use_counts = {}
+        try:
+            self.browser_recycle_tasks = max(
+                5, int(os.environ.get("GROK_SOLVER_RECYCLE_TASKS") or 20)
+            )
+        except (TypeError, ValueError):
+            self.browser_recycle_tasks = 20
         self.use_random_config = use_random_config
         self.browser_name = browser_name
         self.browser_version = browser_version
@@ -768,12 +775,39 @@ class TurnstileAPIServer:
     async def _return_browser_to_pool(self, index, browser, browser_config):
         """Safely return a browser instance to the pool, or recreate it if dead."""
         try:
+            uses = int(self.browser_use_counts.get(index, 0)) + 1
+            self.browser_use_counts[index] = uses
             is_dead = False
             if browser is None:
                 is_dead = True
             elif hasattr(browser, 'is_connected'):
                 if not browser.is_connected():
                     is_dead = True
+
+            should_recycle = uses >= self.browser_recycle_tasks
+            if is_dead or should_recycle:
+                reason = "connection lost" if is_dead else f"periodic recycle after {uses} tasks"
+                logger.info(f"Browser {index}: {reason}. Creating a fresh instance...")
+                # Start the replacement before closing the old browser so a
+                # transient launch error never permanently shrinks the pool.
+                new_browser = await self._create_single_browser(index, browser_config)
+                if new_browser:
+                    try:
+                        if browser is not None:
+                            await browser.close()
+                    except Exception:
+                        pass
+                    self.browser_use_counts[index] = 0
+                    await self.browser_pool.put((index, new_browser, browser_config))
+                    logger.info(f"Browser {index}: Fresh browser returned to pool")
+                    return
+                if not is_dead:
+                    logger.warning(
+                        f"Browser {index}: recycle launch failed; keeping current browser"
+                    )
+                    self.browser_use_counts[index] = max(0, self.browser_recycle_tasks - 5)
+                    await self.browser_pool.put((index, browser, browser_config))
+                    return
 
             if is_dead:
                 logger.warning(f"Browser {index}: Connection lost. Recreating fresh browser instance...")
